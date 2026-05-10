@@ -1,0 +1,30 @@
+project_id = "paracare-outreach"
+
+[api]
+enabled = true
+port = 54331
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54332
+shadow_port = 54330
+major_version = 15
+
+[studio]
+enabled = true
+port = 54333
+
+[auth]
+enabled = true
+site_url = "http://localhost:5174"
+additional_redirect_urls = ["http://localhost:5174", "https://outreach.paracare.com.au"]
+jwt_expiry = 3600
+enable_signup = false
+
+[functions.discover-leads]
+verify_jwt = true
+
+[functions.generate-email]
+verify_jwt = true
