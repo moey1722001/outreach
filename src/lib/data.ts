@@ -1,16 +1,22 @@
 import { supabase } from './supabase';
 import { scoreLead } from './scoring';
-import type { DraftEmail, Lead, LeadFormInput, SearchBrief } from './types';
+import type { ContactEvent, ContactMethod, DraftEmail, EmailRecord, Lead, LeadFormInput, OutreachTone, SearchBrief } from './types';
 
 const STORAGE_KEY = 'paracare-outreach-leads';
 
+const now = () => new Date().toISOString();
+
 const sampleLeads: Lead[] = [
-  {
+  hydrateLead({
     id: 'lead-ndis-inner-west',
     organisation: 'Inner West Support Coordination',
     category: 'NDIS support coordinator',
     website: 'https://example.org/inner-west-support',
     location: 'Sydney Inner West',
+    suburb: 'Marrickville',
+    postcode: '2204',
+    region: 'Inner West Sydney',
+    radiusKm: 12,
     contactName: 'Samantha Lee',
     contactRole: 'Support Coordination Manager',
     email: 'hello@example.org',
@@ -23,15 +29,19 @@ const sampleLeads: Lead[] = [
     nextAction: 'Review draft and send a short introduction.',
     notes: 'Likely values quick updates, reliable escalation paths, and family visibility.',
     lastContactedAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
+    createdAt: now(),
+    updatedAt: now(),
+  }),
+  hydrateLead({
     id: 'lead-hcp-north',
     organisation: 'Northern Home Care Partners',
     category: 'Home Care Package provider',
     website: 'https://example.org/northern-home-care',
     location: 'Northern Beaches',
+    suburb: 'Manly',
+    postcode: '2095',
+    region: 'Northern Beaches',
+    radiusKm: 15,
     contactName: 'Daniel Hart',
     contactRole: 'Care Manager',
     email: 'care@example.org',
@@ -44,18 +54,59 @@ const sampleLeads: Lead[] = [
     nextAction: 'Personalise with local availability and partner review.',
     notes: 'Mention Paracare’s clinical documentation and escalation workflow.',
     lastContactedAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
+    createdAt: now(),
+    updatedAt: now(),
+  }),
 ];
 
-function fromDb(row: Record<string, unknown>): Lead {
+function hydrateLead(partial: Partial<Lead> & Pick<Lead, 'id' | 'organisation' | 'category'>): Lead {
+  const createdAt = partial.createdAt ?? now();
   return {
+    id: partial.id,
+    organisation: partial.organisation,
+    category: partial.category,
+    website: partial.website ?? '',
+    location: partial.location ?? '',
+    suburb: partial.suburb ?? '',
+    postcode: partial.postcode ?? '',
+    region: partial.region ?? '',
+    radiusKm: partial.radiusKm ?? null,
+    contactName: partial.contactName ?? '',
+    contactRole: partial.contactRole ?? '',
+    email: partial.email ?? '',
+    phone: partial.phone ?? '',
+    status: partial.status ?? 'new',
+    likelihood: partial.likelihood ?? 50,
+    fitSummary: partial.fitSummary ?? '',
+    needs: partial.needs ?? [],
+    source: partial.source ?? '',
+    nextAction: partial.nextAction ?? '',
+    notes: partial.notes ?? '',
+    lastContactedAt: partial.lastContactedAt ?? null,
+    contactedBy: partial.contactedBy ?? '',
+    followUpDate: partial.followUpDate ?? '',
+    outcome: partial.outcome ?? '',
+    contactHistory: partial.contactHistory ?? [],
+    emailHistory: partial.emailHistory ?? [],
+    createdAt,
+    updatedAt: partial.updatedAt ?? createdAt,
+  };
+}
+
+function fromDb(row: Record<string, unknown>): Lead {
+  const contactHistory = ((row.outreach_contact_events as Record<string, unknown>[] | null) ?? []).map(fromContactEventDb);
+  const emailHistory = ((row.outreach_email_drafts as Record<string, unknown>[] | null) ?? []).map(fromEmailDb);
+
+  return hydrateLead({
     id: row.id as string,
     organisation: row.organisation as string,
     category: row.category as Lead['category'],
     website: (row.website as string | null) ?? '',
     location: (row.location as string | null) ?? '',
+    suburb: (row.suburb as string | null) ?? '',
+    postcode: (row.postcode as string | null) ?? '',
+    region: (row.region as string | null) ?? '',
+    radiusKm: (row.radius_km as number | null) ?? null,
     contactName: (row.contact_name as string | null) ?? '',
     contactRole: (row.contact_role as string | null) ?? '',
     email: (row.email as string | null) ?? '',
@@ -68,8 +119,41 @@ function fromDb(row: Record<string, unknown>): Lead {
     nextAction: (row.next_action as string | null) ?? '',
     notes: (row.notes as string | null) ?? '',
     lastContactedAt: (row.last_contacted_at as string | null) ?? null,
+    contactedBy: (row.contacted_by as string | null) ?? '',
+    followUpDate: (row.follow_up_date as string | null) ?? '',
+    outcome: (row.outcome as string | null) ?? '',
+    contactHistory,
+    emailHistory,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+  });
+}
+
+function fromContactEventDb(row: Record<string, unknown>): ContactEvent {
+  return {
+    id: row.id as string,
+    leadId: row.lead_id as string,
+    method: row.method as ContactMethod,
+    contactedAt: row.contacted_at as string,
+    contactedBy: (row.contacted_by as string | null) ?? '',
+    notes: (row.notes as string | null) ?? '',
+    outcome: (row.outcome as string | null) ?? '',
+    followUpDate: (row.follow_up_date as string | null) ?? '',
+    createdAt: row.created_at as string,
+  };
+}
+
+function fromEmailDb(row: Record<string, unknown>): EmailRecord {
+  return {
+    id: row.id as string,
+    leadId: row.lead_id as string,
+    subject: row.subject as string,
+    body: row.body as string,
+    tone: row.tone as OutreachTone,
+    generatedAt: (row.generated_at as string | null) ?? (row.created_at as string),
+    reviewedAt: (row.reviewed_at as string | null) ?? null,
+    sentAt: (row.sent_at as string | null) ?? null,
+    createdBy: (row.created_by as string | null) ?? '',
   };
 }
 
@@ -80,6 +164,10 @@ function toDb(lead: Lead) {
     category: lead.category,
     website: lead.website || null,
     location: lead.location || null,
+    suburb: lead.suburb || null,
+    postcode: lead.postcode || null,
+    region: lead.region || null,
+    radius_km: lead.radiusKm,
     contact_name: lead.contactName || null,
     contact_role: lead.contactRole || null,
     email: lead.email || null,
@@ -92,6 +180,9 @@ function toDb(lead: Lead) {
     next_action: lead.nextAction || null,
     notes: lead.notes || null,
     last_contacted_at: lead.lastContactedAt,
+    contacted_by: lead.contactedBy || null,
+    follow_up_date: lead.followUpDate || null,
+    outcome: lead.outcome || null,
   };
 }
 
@@ -103,7 +194,7 @@ function readLocalLeads(): Lead[] {
   }
 
   try {
-    return JSON.parse(stored) as Lead[];
+    return (JSON.parse(stored) as Lead[]).map((lead) => hydrateLead(lead));
   } catch {
     return sampleLeads;
   }
@@ -118,7 +209,7 @@ export async function listLeads(): Promise<Lead[]> {
 
   const { data, error } = await supabase
     .from('outreach_leads')
-    .select('*')
+    .select('*, outreach_contact_events(*), outreach_email_drafts(*)')
     .order('updated_at', { ascending: false });
 
   if (error) throw error;
@@ -126,19 +217,19 @@ export async function listLeads(): Promise<Lead[]> {
 }
 
 export async function saveLead(input: LeadFormInput, existingId?: string): Promise<Lead> {
-  const now = new Date().toISOString();
-  const lead: Lead = {
+  const timestamp = now();
+  const lead = hydrateLead({
     ...input,
     id: existingId ?? crypto.randomUUID(),
     likelihood: input.likelihood ?? scoreLead(input),
-    createdAt: now,
-    updatedAt: now,
-  };
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
 
   if (!supabase) {
     const leads = readLocalLeads();
     const index = leads.findIndex((item) => item.id === lead.id);
-    const nextLead = index >= 0 ? { ...leads[index], ...lead, createdAt: leads[index].createdAt, updatedAt: now } : lead;
+    const nextLead = index >= 0 ? { ...leads[index], ...lead, createdAt: leads[index].createdAt, updatedAt: timestamp } : lead;
     const next = index >= 0 ? leads.map((item) => (item.id === lead.id ? nextLead : item)) : [nextLead, ...leads];
     writeLocalLeads(next);
     return nextLead;
@@ -147,7 +238,7 @@ export async function saveLead(input: LeadFormInput, existingId?: string): Promi
   const { data, error } = await supabase
     .from('outreach_leads')
     .upsert(toDb(lead))
-    .select('*')
+    .select('*, outreach_contact_events(*), outreach_email_drafts(*)')
     .single();
 
   if (error) throw error;
@@ -158,36 +249,150 @@ export async function updateLeadStatus(lead: Lead, status: Lead['status']): Prom
   return saveLead({ ...lead, status, likelihood: lead.likelihood }, lead.id);
 }
 
+export async function logContact(lead: Lead, event: Omit<ContactEvent, 'id' | 'leadId' | 'createdAt'>): Promise<Lead> {
+  const contactEvent: ContactEvent = {
+    ...event,
+    id: crypto.randomUUID(),
+    leadId: lead.id,
+    createdAt: now(),
+  };
+
+  const updatedLead = hydrateLead({
+    ...lead,
+    status: event.method === 'email_sent' ? 'contacted' : lead.status,
+    lastContactedAt: event.contactedAt,
+    contactedBy: event.contactedBy,
+    followUpDate: event.followUpDate,
+    outcome: event.outcome,
+    contactHistory: [contactEvent, ...lead.contactHistory],
+  });
+
+  if (!supabase) {
+    const leads = readLocalLeads().map((item) => (item.id === lead.id ? updatedLead : item));
+    writeLocalLeads(leads);
+    return updatedLead;
+  }
+
+  const { error: eventError } = await supabase.from('outreach_contact_events').insert({
+    id: contactEvent.id,
+    lead_id: contactEvent.leadId,
+    method: contactEvent.method,
+    contacted_at: contactEvent.contactedAt,
+    contacted_by: contactEvent.contactedBy || null,
+    notes: contactEvent.notes || null,
+    outcome: contactEvent.outcome || null,
+    follow_up_date: contactEvent.followUpDate || null,
+  });
+  if (eventError) throw eventError;
+
+  return saveLead({ ...updatedLead, likelihood: updatedLead.likelihood }, updatedLead.id);
+}
+
+export async function markLatestEmailSent(lead: Lead, contactedBy: string, sentAt = now()): Promise<Lead> {
+  const latest = lead.emailHistory[0];
+  if (!latest) return lead;
+
+  if (!supabase) {
+    const updatedHistory = lead.emailHistory.map((email, index) => index === 0 ? { ...email, sentAt } : email);
+    const updatedLead = hydrateLead({ ...lead, emailHistory: updatedHistory });
+    writeLocalLeads(readLocalLeads().map((item) => (item.id === lead.id ? updatedLead : item)));
+    return logContact(updatedLead, {
+      method: 'email_sent',
+      contactedAt: sentAt,
+      contactedBy,
+      notes: `Email sent: ${latest.subject}`,
+      outcome: 'Email sent',
+      followUpDate: lead.followUpDate,
+    });
+  }
+
+  const { error } = await supabase.from('outreach_email_drafts').update({ sent_at: sentAt }).eq('id', latest.id);
+  if (error) throw error;
+
+  return logContact(lead, {
+    method: 'email_sent',
+    contactedAt: sentAt,
+    contactedBy,
+    notes: `Email sent: ${latest.subject}`,
+    outcome: 'Email sent',
+    followUpDate: lead.followUpDate,
+  });
+}
+
 export async function discoverLeads(brief: SearchBrief): Promise<Lead[]> {
   if (!supabase) return createLocalDiscoveries(brief);
 
   const { data, error } = await supabase.functions.invoke('discover-leads', { body: brief });
   if (error) throw error;
-  return (data?.leads ?? []).map((lead: Lead) => ({
+  return (data?.leads ?? []).map((lead: Partial<Lead> & Pick<Lead, 'organisation' | 'category'>) => hydrateLead({
     ...lead,
     id: lead.id || crypto.randomUUID(),
-    createdAt: lead.createdAt || new Date().toISOString(),
-    updatedAt: lead.updatedAt || new Date().toISOString(),
+    createdAt: lead.createdAt || now(),
+    updatedAt: lead.updatedAt || now(),
   }));
 }
 
-export async function generateEmail(lead: Lead, tone: string): Promise<DraftEmail> {
-  if (!supabase) return createLocalEmail(lead, tone);
+export async function generateEmail(lead: Lead, tone: OutreachTone, createdBy = ''): Promise<DraftEmail> {
+  const draft = !supabase
+    ? createLocalEmail(lead, tone)
+    : await invokeGenerateEmail(lead, tone);
 
-  const { data, error } = await supabase.functions.invoke('generate-email', { body: { lead, tone } });
+  await saveEmailDraft(lead, draft, tone, createdBy);
+  return draft;
+}
+
+async function invokeGenerateEmail(lead: Lead, tone: OutreachTone): Promise<DraftEmail> {
+  const { data, error } = await supabase!.functions.invoke('generate-email', { body: { lead, tone } });
   if (error) throw error;
   return data as DraftEmail;
 }
 
+async function saveEmailDraft(lead: Lead, draft: DraftEmail, tone: OutreachTone, createdBy: string) {
+  const record: EmailRecord = {
+    id: crypto.randomUUID(),
+    leadId: lead.id,
+    subject: draft.subject,
+    body: draft.body,
+    tone,
+    generatedAt: now(),
+    reviewedAt: null,
+    sentAt: null,
+    createdBy,
+  };
+
+  if (!supabase) {
+    const updatedLead = hydrateLead({ ...lead, status: 'drafted', emailHistory: [record, ...lead.emailHistory] });
+    writeLocalLeads(readLocalLeads().map((item) => (item.id === lead.id ? updatedLead : item)));
+    return;
+  }
+
+  const { error } = await supabase.from('outreach_email_drafts').insert({
+    id: record.id,
+    lead_id: record.leadId,
+    subject: record.subject,
+    body: record.body,
+    tone: record.tone,
+    generated_at: record.generatedAt,
+    created_by: record.createdBy || null,
+  });
+  if (error) throw error;
+}
+
 function createLocalDiscoveries(brief: SearchBrief): Lead[] {
-  const now = new Date().toISOString();
+  const timestamp = now();
+  const place = [brief.suburb, brief.postcode, brief.region].filter(Boolean).join(' ') || brief.location || 'Local';
+
   return brief.categories.slice(0, 4).map((category, index) => {
-    const lead: Lead = {
+    const lead = hydrateLead({
       id: crypto.randomUUID(),
-      organisation: `${brief.location || 'Local'} ${category.replace(' provider', '').replace(' clinic', '')} Network`,
+      organisation: `${place} ${category.replace(' provider', '').replace(' clinic', '')} Network`,
       category,
       website: '',
-      location: brief.location,
+      location: place,
+      suburb: brief.suburb,
+      postcode: brief.postcode,
+      region: brief.region,
+      radiusKm: brief.radiusKm,
       contactName: '',
       contactRole: category === 'GP clinic' ? 'Practice Manager' : 'Partnerships or Referrals Lead',
       email: '',
@@ -199,16 +404,15 @@ function createLocalDiscoveries(brief: SearchBrief): Lead[] {
       source: 'Local discovery draft',
       nextAction: 'Verify website, decision maker, and email before outreach.',
       notes: brief.notes,
-      lastContactedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    };
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
     lead.likelihood = scoreLead(lead) - index * 4;
     return lead;
   });
 }
 
-function createLocalEmail(lead: Lead, tone: string): DraftEmail {
+function createLocalEmail(lead: Lead, tone: OutreachTone): DraftEmail {
   const greeting = lead.contactName ? `Hi ${lead.contactName.split(' ')[0]},` : 'Hi,';
   const body = [
     greeting,
@@ -218,6 +422,7 @@ function createLocalEmail(lead: Lead, tone: string): DraftEmail {
     `We support clients who need reliable nursing oversight, clear documentation, and responsive communication between families, coordinators and care teams. For ${lead.category.toLowerCase()} partners, that usually means fewer gaps between referral, visit, escalation and follow-up.`,
     '',
     lead.fitSummary ? `What stood out: ${lead.fitSummary}` : '',
+    lead.region || lead.suburb ? `We are looking specifically at the ${[lead.suburb, lead.region].filter(Boolean).join(', ')} area.` : '',
     '',
     tone === 'concise'
       ? 'Would it be worth a brief conversation next week to see whether Paracare could support any current clients?'

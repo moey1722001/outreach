@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { location, categories, notes } = await req.json();
+    const { location, suburb, postcode, region, radiusKm, categories, notes } = await req.json();
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     const searchKey = Deno.env.get('TAVILY_API_KEY');
 
@@ -20,16 +20,16 @@ serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           api_key: searchKey,
-          query: `${categories.join(' OR ')} ${location} healthcare referrals community aged care NDIS`,
+          query: `${categories.join(' OR ')} near ${suburb ?? ''} ${postcode ?? ''} ${region ?? location ?? ''} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`,
           search_depth: 'advanced',
-          max_results: 8,
+          max_results: 10,
         }),
       });
       if (searchResponse.ok) searchResults = JSON.stringify(await searchResponse.json());
     }
 
     if (!openAiKey) {
-      return Response.json({ leads: fallbackLeads(location, categories, notes) }, { headers: corsHeaders });
+      return Response.json({ leads: fallbackLeads({ location, suburb, postcode, region, radiusKm, categories, notes }) }, { headers: corsHeaders });
     }
 
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -43,11 +43,11 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You are a careful healthcare partnership researcher. Extract likely Australian outreach leads from supplied search results. Do not invent email addresses or personal names. Score based on role fit, referral relevance, public evidence and likely need.',
+            content: 'You are a careful healthcare partnership researcher. Extract likely Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. Score based on area fit, role fit, referral relevance, public evidence and likely need.',
           },
           {
             role: 'user',
-            content: JSON.stringify({ location, categories, notes, searchResults }),
+            content: JSON.stringify({ location, suburb, postcode, region, radiusKm, categories, notes, searchResults }),
           },
         ],
         text: {
@@ -64,12 +64,16 @@ serve(async (req) => {
                   items: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['organisation', 'category', 'website', 'location', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
+                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
                     properties: {
                       organisation: { type: 'string' },
                       category: { type: 'string' },
                       website: { type: 'string' },
                       location: { type: 'string' },
+                      suburb: { type: 'string' },
+                      postcode: { type: 'string' },
+                      region: { type: 'string' },
+                      radiusKm: { type: ['number', 'null'] },
                       contactName: { type: 'string' },
                       contactRole: { type: 'string' },
                       email: { type: 'string' },
@@ -101,12 +105,18 @@ serve(async (req) => {
   }
 });
 
-function fallbackLeads(location: string, categories: string[], notes: string) {
+function fallbackLeads({ location, suburb, postcode, region, radiusKm, categories, notes }: { location: string; suburb: string; postcode: string; region: string; radiusKm: number | null; categories: string[]; notes: string }) {
+  const area = [suburb, postcode, region].filter(Boolean).join(' ') || location;
+
   return categories.slice(0, 4).map((category, index) => ({
-    organisation: `${location || 'Local'} ${category} candidate`,
+    organisation: `${area || 'Local'} ${category} candidate`,
     category,
     website: '',
-    location,
+    location: area,
+    suburb: suburb ?? '',
+    postcode: postcode ?? '',
+    region: region ?? '',
+    radiusKm: radiusKm ?? null,
     contactName: '',
     contactRole: category === 'GP clinic' ? 'Practice Manager' : 'Referrals or Partnerships Lead',
     email: '',

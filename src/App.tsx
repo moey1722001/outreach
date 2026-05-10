@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowRight,
+  AlertTriangle,
   CheckCircle2,
   Copy,
   Edit3,
@@ -16,10 +17,11 @@ import {
   UserRound,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
-import { discoverLeads, generateEmail, listLeads, saveLead, updateLeadStatus } from './lib/data';
+import { discoverLeads, generateEmail, listLeads, logContact, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
+import { findDuplicateMatches, hasPriorOutreach } from './lib/duplicates';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
-import type { DraftEmail, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
+import type { ContactMethod, DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
 
 type WorkspaceView = 'discover' | 'review' | 'draft';
 type FocusFilter = 'all' | 'review' | 'draft' | 'follow_up';
@@ -57,6 +59,10 @@ const emptyLead: LeadFormInput = {
   category: 'NDIS support coordinator',
   website: '',
   location: '',
+  suburb: '',
+  postcode: '',
+  region: '',
+  radiusKm: null,
   contactName: '',
   contactRole: '',
   email: '',
@@ -68,6 +74,11 @@ const emptyLead: LeadFormInput = {
   nextAction: '',
   notes: '',
   lastContactedAt: null,
+  contactedBy: '',
+  followUpDate: '',
+  outcome: '',
+  contactHistory: [],
+  emailHistory: [],
 };
 
 export default function App() {
@@ -86,6 +97,10 @@ export default function App() {
   const [needInput, setNeedInput] = useState('');
   const [brief, setBrief] = useState<SearchBrief>({
     location: 'Sydney',
+    suburb: '',
+    postcode: '',
+    region: 'Sydney',
+    radiusKm: 10,
     categories: ['NDIS support coordinator', 'Home Care Package provider', 'GP clinic'],
     notes: 'Prioritise organisations likely to refer clients who need in-home nursing and responsive escalation.',
   });
@@ -137,9 +152,14 @@ export default function App() {
         lead.organisation,
         lead.category,
         lead.location,
+        lead.suburb,
+        lead.postcode,
+        lead.region,
         lead.contactName,
         lead.contactRole,
         lead.email,
+        lead.phone,
+        lead.website,
         lead.notes,
       ].some((value) => value.toLowerCase().includes(normalised));
 
@@ -152,6 +172,8 @@ export default function App() {
   }, [focus, leads, query]);
 
   const selectedLead = leads.find((lead) => lead.id === selectedId) ?? filteredLeads[0] ?? null;
+  const selectedDuplicates = selectedLead ? findDuplicateMatches(selectedLead, leads, selectedLead.id) : [];
+  const formDuplicates = findDuplicateMatches(form, leads, editingId);
 
   async function refresh(nextSelectedId?: string) {
     const items = await listLeads();
@@ -192,6 +214,7 @@ export default function App() {
     try {
       const discoveries = await discoverLeads(brief);
       for (const lead of discoveries) {
+        if (findDuplicateMatches(lead, leads, lead.id).length > 0) continue;
         await saveLead({ ...lead, likelihood: lead.likelihood }, lead.id);
       }
       await refresh(discoveries[0]?.id);
@@ -209,6 +232,11 @@ export default function App() {
     setBusy('Saving lead');
     setError('');
     try {
+      if (formDuplicates.length > 0) {
+        setError(`Duplicate blocked: this lead matches ${formDuplicates.map((match) => match.organisation).join(', ')} by ${formDuplicates.flatMap((match) => match.matchedOn).join(', ')}.`);
+        return;
+      }
+
       const next = await saveLead({ ...form, likelihood: scoreLead(form) }, editingId);
       await refresh(next.id);
       resetForm();
@@ -222,13 +250,17 @@ export default function App() {
 
   async function handleGenerateEmail() {
     if (!selectedLead) return;
+    if ((hasPriorOutreach(selectedLead) || selectedDuplicates.some((match) => match.lastContactedAt)) && !window.confirm('This organisation or matching contact has previous outreach history. Generate another email anyway?')) {
+      return;
+    }
+
     setBusy('Generating email');
     setError('');
     try {
-      const nextDraft = await generateEmail(selectedLead, tone);
+      const nextDraft = await generateEmail(selectedLead, tone, session?.user.email ?? 'Local user');
       setDraft(nextDraft);
       const updated = await updateLeadStatus(selectedLead, selectedLead.status === 'qualified' || selectedLead.status === 'new' ? 'drafted' : selectedLead.status);
-      setLeads((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      await refresh(updated.id);
       setView('draft');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Email generation failed.');
@@ -242,6 +274,40 @@ export default function App() {
     setLeads((items) => items.map((item) => (item.id === updated.id ? updated : item)));
   }
 
+  async function handleLogContact(lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) {
+    if ((hasPriorOutreach(lead) || selectedDuplicates.some((match) => match.lastContactedAt)) && !window.confirm('This organisation or matching contact has previous outreach history. Log another contact anyway?')) {
+      return;
+    }
+
+    setBusy('Logging contact');
+    setError('');
+    try {
+      const updated = await logContact(lead, payload);
+      await refresh(updated.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not log contact.');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function handleMarkEmailSent(lead: Lead, contactedBy: string) {
+    if ((hasPriorOutreach(lead) || selectedDuplicates.some((match) => match.lastContactedAt)) && !window.confirm('This organisation or matching contact has previous outreach history. Mark another email as sent anyway?')) {
+      return;
+    }
+
+    setBusy('Saving sent email');
+    setError('');
+    try {
+      const updated = await markLatestEmailSent(lead, contactedBy || session?.user.email || 'Local user');
+      await refresh(updated.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not mark email as sent.');
+    } finally {
+      setBusy('');
+    }
+  }
+
   function editLead(lead: Lead) {
     setEditingId(lead.id);
     setForm({
@@ -249,6 +315,10 @@ export default function App() {
       category: lead.category,
       website: lead.website,
       location: lead.location,
+      suburb: lead.suburb,
+      postcode: lead.postcode,
+      region: lead.region,
+      radiusKm: lead.radiusKm,
       contactName: lead.contactName,
       contactRole: lead.contactRole,
       email: lead.email,
@@ -261,6 +331,11 @@ export default function App() {
       nextAction: lead.nextAction,
       notes: lead.notes,
       lastContactedAt: lead.lastContactedAt,
+      contactedBy: lead.contactedBy,
+      followUpDate: lead.followUpDate,
+      outcome: lead.outcome,
+      contactHistory: lead.contactHistory,
+      emailHistory: lead.emailHistory,
     });
     setNeedInput(lead.needs.join(', '));
     setShowLeadForm(true);
@@ -431,6 +506,7 @@ export default function App() {
                   busy={Boolean(busy)}
                   onSubmit={handleSaveLead}
                   onCancel={resetForm}
+                  duplicateMatches={formDuplicates}
                   onNeedInputChange={(value) => {
                     setNeedInput(value);
                     setForm({ ...form, needs: value.split(',').map((item) => item.trim()).filter(Boolean) });
@@ -440,8 +516,10 @@ export default function App() {
               ) : (
                 <LeadReviewPanel
                   lead={selectedLead}
+                  duplicateMatches={selectedDuplicates}
                   onEdit={editLead}
                   onGenerate={handleGenerateEmail}
+                  onLogContact={handleLogContact}
                   onStatusChange={handleStatusChange}
                   busy={Boolean(busy)}
                 />
@@ -459,6 +537,8 @@ export default function App() {
               onGenerate={handleGenerateEmail}
               onDraftChange={setDraft}
               onStatusChange={handleStatusChange}
+              onMarkSent={handleMarkEmailSent}
+              duplicateMatches={selectedDuplicates}
             />
           )}
         </section>
@@ -488,11 +568,17 @@ function DiscoverPanel({
           Lead discovery
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">Find likely referral partners</h2>
-        <p className="text-sm leading-6 text-slate-600">Choose a location and target groups. New results go straight into the review queue.</p>
+        <p className="text-sm leading-6 text-slate-600">Search by suburb, postcode, region and radius. New, non-duplicate results go straight into the review queue.</p>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
-        <Field label="Location" value={brief.location} onChange={(value) => onBriefChange({ ...brief, location: value })} />
+      <div className="mt-5 grid gap-4 lg:grid-cols-4">
+        <Field label="Suburb" value={brief.suburb} onChange={(value) => onBriefChange({ ...brief, suburb: value, location: [value, brief.postcode, brief.region].filter(Boolean).join(' ') })} />
+        <Field label="Postcode" value={brief.postcode} onChange={(value) => onBriefChange({ ...brief, postcode: value, location: [brief.suburb, value, brief.region].filter(Boolean).join(' ') })} />
+        <Field label="Region" value={brief.region} onChange={(value) => onBriefChange({ ...brief, region: value, location: [brief.suburb, brief.postcode, value].filter(Boolean).join(' ') })} />
+        <Field label="Radius km" type="number" value={brief.radiusKm?.toString() ?? ''} onChange={(value) => onBriefChange({ ...brief, radiusKm: value ? Number(value) : null })} />
+      </div>
+
+      <div className="mt-4">
         <label className="block">
           <span className="label">Search instructions</span>
           <textarea className="textarea min-h-24" value={brief.notes} onChange={(event) => onBriefChange({ ...brief, notes: event.target.value })} />
@@ -523,15 +609,19 @@ function DiscoverPanel({
 
 function LeadReviewPanel({
   lead,
+  duplicateMatches,
   busy,
   onEdit,
   onGenerate,
+  onLogContact,
   onStatusChange,
 }: {
   lead: Lead | null;
+  duplicateMatches: DuplicateMatch[];
   busy: boolean;
   onEdit: (lead: Lead) => void;
   onGenerate: () => void;
+  onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
 }) {
   if (!lead) {
@@ -546,6 +636,7 @@ function LeadReviewPanel({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <DuplicateWarning lead={lead} matches={duplicateMatches} />
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -572,7 +663,7 @@ function LeadReviewPanel({
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <Info icon={<UserRound size={17} />} label="Person to reach" value={[lead.contactName, lead.contactRole].filter(Boolean).join(' · ') || 'Find the decision maker'} />
         <Info icon={<Mail size={17} />} label="Email" value={lead.email || 'Needs verification'} />
-        <Info icon={<MapPin size={17} />} label="Location" value={lead.location || 'Not set'} />
+        <Info icon={<MapPin size={17} />} label="Area" value={[lead.suburb, lead.postcode, lead.region, lead.radiusKm ? `${lead.radiusKm}km` : ''].filter(Boolean).join(' · ') || lead.location || 'Not set'} />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_280px]">
@@ -595,6 +686,7 @@ function LeadReviewPanel({
           <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">{lead.nextAction || nextActionForStatus(lead.status)}</p>
         </div>
       </div>
+      <HistoryPanel lead={lead} onLogContact={onLogContact} />
     </div>
   );
 }
@@ -603,6 +695,7 @@ function LeadForm({
   form,
   editing,
   needInput,
+  duplicateMatches,
   busy,
   onSubmit,
   onCancel,
@@ -612,6 +705,7 @@ function LeadForm({
   form: LeadFormInput;
   editing: boolean;
   needInput: string;
+  duplicateMatches: DuplicateMatch[];
   busy: boolean;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
@@ -624,6 +718,7 @@ function LeadForm({
         <h2 className="text-2xl font-semibold tracking-tight">{editing ? 'Edit lead' : 'Add lead'}</h2>
         <p className="text-sm text-slate-600">Keep only what helps decide fit and write a better first email.</p>
       </div>
+      {duplicateMatches.length > 0 && <DuplicateMatchList matches={duplicateMatches} />}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Organisation" value={form.organisation} onChange={(value) => onFormChange({ ...form, organisation: value })} required />
         <label className="block">
@@ -633,6 +728,10 @@ function LeadForm({
           </select>
         </label>
         <Field label="Location" value={form.location} onChange={(value) => onFormChange({ ...form, location: value })} />
+        <Field label="Suburb" value={form.suburb} onChange={(value) => onFormChange({ ...form, suburb: value })} />
+        <Field label="Postcode" value={form.postcode} onChange={(value) => onFormChange({ ...form, postcode: value })} />
+        <Field label="Region" value={form.region} onChange={(value) => onFormChange({ ...form, region: value })} />
+        <Field label="Radius km" type="number" value={form.radiusKm?.toString() ?? ''} onChange={(value) => onFormChange({ ...form, radiusKm: value ? Number(value) : null })} />
         <Field label="Website" value={form.website} onChange={(value) => onFormChange({ ...form, website: value })} />
         <Field label="Contact name" value={form.contactName} onChange={(value) => onFormChange({ ...form, contactName: value })} />
         <Field label="Role or position" value={form.contactRole} onChange={(value) => onFormChange({ ...form, contactRole: value })} />
@@ -667,21 +766,27 @@ function DraftPanel({
   lead,
   draft,
   tone,
+  duplicateMatches,
   busy,
   onToneChange,
   onGenerate,
   onDraftChange,
   onStatusChange,
+  onMarkSent,
 }: {
   lead: Lead | null;
   draft: DraftEmail | null;
   tone: OutreachTone;
+  duplicateMatches: DuplicateMatch[];
   busy: boolean;
   onToneChange: (tone: OutreachTone) => void;
   onGenerate: () => void;
   onDraftChange: (draft: DraftEmail) => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
+  onMarkSent: (lead: Lead, contactedBy: string) => void;
 }) {
+  const [contactedBy, setContactedBy] = useState('');
+
   if (!lead) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
@@ -694,6 +799,7 @@ function DraftPanel({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <DuplicateWarning lead={lead} matches={duplicateMatches} />
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="text-sm font-semibold text-sky-700">Human review email</div>
@@ -723,9 +829,14 @@ function DraftPanel({
             <textarea className="textarea min-h-96 font-mono text-sm" value={draft.body} onChange={(event) => onDraftChange({ ...draft, body: event.target.value })} />
           </label>
           <div className="flex flex-wrap justify-end gap-2">
+            <input className="input max-w-56" placeholder="Who contacted them?" value={contactedBy} onChange={(event) => setContactedBy(event.target.value)} />
             <button className="button-secondary" onClick={() => navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`)}>
               <Copy size={17} />
               Copy
+            </button>
+            <button className="button-secondary" onClick={() => onMarkSent(lead, contactedBy)}>
+              <Mail size={17} />
+              Mark sent
             </button>
             <button className="button-primary" onClick={() => onStatusChange(lead, 'reviewed')}>
               <CheckCircle2 size={17} />
@@ -743,6 +854,130 @@ function DraftPanel({
   );
 }
 
+function HistoryPanel({ lead, onLogContact }: { lead: Lead; onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void }) {
+  return (
+    <div className="mt-5 grid gap-5 xl:grid-cols-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-sm font-semibold text-slate-800">Contact history</h3>
+        <div className="mt-3 space-y-3">
+          {lead.contactHistory.length > 0 ? lead.contactHistory.map((event) => (
+            <div key={event.id} className="rounded-md bg-white p-3 text-sm ring-1 ring-slate-200">
+              <div className="font-semibold text-slate-800">{event.method.replace('_', ' ')} · {formatDate(event.contactedAt)}</div>
+              <div className="mt-1 text-slate-600">{event.contactedBy || 'Unknown'}{event.outcome ? ` · ${event.outcome}` : ''}</div>
+              {event.notes && <p className="mt-2 text-slate-600">{event.notes}</p>}
+              {event.followUpDate && <p className="mt-2 text-xs font-semibold text-sky-700">Follow up {formatDate(event.followUpDate)}</p>}
+            </div>
+          )) : <p className="text-sm text-slate-500">No contact has been logged yet.</p>}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <h3 className="text-sm font-semibold text-slate-800">Emails generated</h3>
+        <div className="mt-3 space-y-3">
+          {lead.emailHistory.length > 0 ? lead.emailHistory.map((email) => (
+            <div key={email.id} className="rounded-md bg-white p-3 text-sm ring-1 ring-slate-200">
+              <div className="font-semibold text-slate-800">{email.subject}</div>
+              <div className="mt-1 text-slate-600">Generated {formatDate(email.generatedAt)}{email.createdBy ? ` by ${email.createdBy}` : ''}</div>
+              {email.sentAt && <p className="mt-2 text-xs font-semibold text-emerald-700">Sent {formatDate(email.sentAt)}</p>}
+            </div>
+          )) : <p className="text-sm text-slate-500">No email drafts have been generated yet.</p>}
+        </div>
+      </div>
+
+      <ContactLogForm lead={lead} onLogContact={onLogContact} />
+    </div>
+  );
+}
+
+function ContactLogForm({ lead, onLogContact }: { lead: Lead; onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void }) {
+  const [method, setMethod] = useState<ContactMethod>('manual_note');
+  const [contactedAt, setContactedAt] = useState(new Date().toISOString().slice(0, 10));
+  const [contactedBy, setContactedBy] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  return (
+    <form
+      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onLogContact(lead, {
+          method,
+          contactedAt: new Date(contactedAt).toISOString(),
+          contactedBy,
+          notes,
+          outcome,
+          followUpDate,
+        });
+        setNotes('');
+        setOutcome('');
+      }}
+    >
+      <h3 className="text-sm font-semibold text-slate-800">Log manual contact</h3>
+      <div className="mt-3 grid gap-3 md:grid-cols-3">
+        <label>
+          <span className="label">Method</span>
+          <select className="input" value={method} onChange={(event) => setMethod(event.target.value as ContactMethod)}>
+            <option value="manual_note">Manual note</option>
+            <option value="email_sent">Email sent</option>
+            <option value="phone_call">Phone call</option>
+            <option value="meeting">Meeting</option>
+          </select>
+        </label>
+        <Field label="Date contacted" type="date" value={contactedAt} onChange={setContactedAt} required />
+        <Field label="Who contacted them" value={contactedBy} onChange={setContactedBy} />
+        <Field label="Outcome" value={outcome} onChange={setOutcome} />
+        <Field label="Follow-up date" type="date" value={followUpDate} onChange={setFollowUpDate} />
+      </div>
+      <label className="mt-3 block">
+        <span className="label">Notes</span>
+        <textarea className="textarea" value={notes} onChange={(event) => setNotes(event.target.value)} />
+      </label>
+      <div className="mt-3 flex justify-end">
+        <button className="button-primary">
+          <CheckCircle2 size={17} />
+          Save contact log
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function DuplicateWarning({ lead, matches }: { lead: Lead; matches: DuplicateMatch[] }) {
+  if (!hasPriorOutreach(lead) && matches.length === 0) return null;
+
+  return (
+    <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      <div className="flex items-start gap-2 font-semibold">
+        <AlertTriangle size={18} />
+        Previous outreach or duplicate match found
+      </div>
+      {lead.lastContactedAt && <p className="mt-2">This lead was contacted on {formatDate(lead.lastContactedAt)}{lead.contactedBy ? ` by ${lead.contactedBy}` : ''}.</p>}
+      {matches.length > 0 && <DuplicateMatchList matches={matches} compact />}
+    </div>
+  );
+}
+
+function DuplicateMatchList({ matches, compact = false }: { matches: DuplicateMatch[]; compact?: boolean }) {
+  return (
+    <div className={compact ? 'mt-2 space-y-1' : 'mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800'}>
+      {!compact && (
+        <div className="mb-2 flex items-start gap-2 font-semibold">
+          <AlertTriangle size={18} />
+          Duplicate prevention blocked this save
+        </div>
+      )}
+      {matches.map((match) => (
+        <p key={match.leadId}>
+          Matches <strong>{match.organisation}</strong> by {match.matchedOn.join(', ')}
+          {match.lastContactedAt ? ` · contacted ${formatDate(match.lastContactedAt)}` : ` · status ${match.status}`}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ViewButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
     <button className={`view-button ${active ? 'view-button-active' : ''}`} onClick={onClick}>
@@ -750,6 +985,11 @@ function ViewButton({ active, icon, label, onClick }: { active: boolean; icon: R
       {label}
     </button>
   );
+}
+
+function formatDate(value: string) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
 }
 
 function StatusPill({ active }: { active: boolean }) {
