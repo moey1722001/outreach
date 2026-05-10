@@ -16,6 +16,7 @@ body {
   margin: 0;
   min-width: 320px;
   overflow-x: hidden;
+  background: #f8fafc;
 }
 
 button,
@@ -94,6 +95,60 @@ button:disabled {
 .button-secondary:hover {
   border-color: #94a3b8;
   background: #f8fafc;
+}
+
+.sidebar-link,
+.mobile-nav-link,
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border-radius: 0.5rem;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 750;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.sidebar-link {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.sidebar-link:hover,
+.sidebar-link-active {
+  background: #f0f9ff;
+  color: #075985;
+}
+
+.mobile-nav-link {
+  min-height: 2.5rem;
+  flex: 0 0 auto;
+  padding: 0.55rem 0.75rem;
+  white-space: nowrap;
+}
+
+.mobile-nav-link:hover,
+.mobile-nav-link-active {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.quick-action {
+  width: 100%;
+  min-height: 2.9rem;
+  justify-content: flex-start;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 0.75rem;
+  color: #0f172a;
+}
+
+.quick-action:hover {
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #075985;
 }
 
 .view-button {

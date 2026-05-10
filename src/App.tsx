@@ -3,18 +3,23 @@ import {
   Activity,
   ArrowRight,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   Copy,
   Edit3,
+  FileText,
+  LayoutDashboard,
   LogOut,
   Mail,
   MapPin,
   Plus,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
   Target,
   UserRound,
+  Users,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
 import { discoverLeads, generateEmail, listLeads, logContact, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
@@ -23,7 +28,7 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
 import type { ContactMethod, DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
 
-type WorkspaceView = 'discover' | 'review' | 'draft';
+type AppPage = 'dashboard' | 'leads' | 'finder' | 'drafts' | 'followups' | 'settings';
 type FocusFilter = 'all' | 'review' | 'draft' | 'follow_up';
 
 const categories: LeadCategory[] = [
@@ -88,7 +93,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<WorkspaceView>('review');
+  const [page, setPage] = useState<AppPage>('dashboard');
   const [focus, setFocus] = useState<FocusFilter>('review');
   const [query, setQuery] = useState('');
   const [form, setForm] = useState<LeadFormInput>(emptyLead);
@@ -141,8 +146,8 @@ export default function App() {
     const review = leads.filter((lead) => ['new', 'researching'].includes(lead.status)).length;
     const draftReady = leads.filter((lead) => ['qualified', 'drafted', 'reviewed'].includes(lead.status)).length;
     const followUp = leads.filter((lead) => ['contacted', 'follow_up'].includes(lead.status)).length;
-    const avg = leads.length ? Math.round(leads.reduce((sum, lead) => sum + lead.likelihood, 0) / leads.length) : 0;
-    return { review, draftReady, followUp, avg };
+    const contacted = leads.filter((lead) => lead.lastContactedAt || lead.contactHistory.length > 0).length;
+    return { total: leads.length, review, draftReady, followUp, contacted };
   }, [leads]);
 
   const filteredLeads = useMemo(() => {
@@ -218,7 +223,7 @@ export default function App() {
         await saveLead({ ...lead, likelihood: lead.likelihood }, lead.id);
       }
       await refresh(discoveries[0]?.id);
-      setView('review');
+      setPage('leads');
       setFocus('review');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lead discovery failed.');
@@ -240,7 +245,7 @@ export default function App() {
       const next = await saveLead({ ...form, likelihood: scoreLead(form) }, editingId);
       await refresh(next.id);
       resetForm();
-      setView('review');
+      setPage('leads');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save lead.');
     } finally {
@@ -261,7 +266,7 @@ export default function App() {
       setDraft(nextDraft);
       const updated = await updateLeadStatus(selectedLead, selectedLead.status === 'qualified' || selectedLead.status === 'new' ? 'drafted' : selectedLead.status);
       await refresh(updated.id);
-      setView('draft');
+      setPage('drafts');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Email generation failed.');
     } finally {
@@ -339,7 +344,7 @@ export default function App() {
     });
     setNeedInput(lead.needs.join(', '));
     setShowLeadForm(true);
-    setView('review');
+    setPage('leads');
   }
 
   function resetForm() {
@@ -395,98 +400,74 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-sky-600 text-white shadow-sm">
-                <Activity size={23} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight">Paracare Outreach</h1>
-                <p className="text-sm text-slate-500">Find leads, review fit, draft emails, follow up.</p>
-              </div>
+    <div className="min-h-screen bg-slate-50 text-slate-950 lg:flex">
+      <Sidebar page={page} onPageChange={setPage} onSignOut={() => supabase?.auth.signOut()} showSignOut={Boolean(session)} />
+
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+          <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+            <div>
+              <h1 className="text-lg font-semibold tracking-tight">{pageTitle(page)}</h1>
+              <p className="hidden text-sm text-slate-500 sm:block">{pageDescription(page)}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               <StatusPill active={isSupabaseConfigured} />
-              <span className="inline-flex h-10 items-center gap-2 rounded-md bg-sky-600 px-3 text-sm font-semibold text-white">
-                <ShieldCheck size={17} />
-                Internal
-              </span>
               {session && (
-                <button className="button-secondary" onClick={() => supabase?.auth.signOut()} aria-label="Sign out">
+                <button className="button-secondary lg:hidden" onClick={() => supabase?.auth.signOut()} aria-label="Sign out">
                   <LogOut size={17} />
                 </button>
               )}
             </div>
           </div>
+          <MobileNav page={page} onPageChange={setPage} />
+        </header>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="Needs review" value={metrics.review.toString()} />
-            <Metric label="Ready to draft" value={metrics.draftReady.toString()} />
-            <Metric label="Follow up" value={metrics.followUp.toString()} />
-            <Metric label="Average fit" value={`${metrics.avg}%`} />
-          </div>
-
-          <div className="mt-5 grid gap-2 rounded-lg bg-slate-100 p-1 sm:grid-cols-3">
-            <ViewButton active={view === 'discover'} icon={<Search size={17} />} label="1. Discover" onClick={() => setView('discover')} />
-            <ViewButton active={view === 'review'} icon={<Target size={17} />} label="2. Review" onClick={() => setView('review')} />
-            <ViewButton active={view === 'draft'} icon={<Mail size={17} />} label="3. Draft" onClick={() => setView('draft')} />
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
-        <aside className="space-y-4">
-          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-base font-semibold">Work queue</h2>
-              <button className="button-secondary h-9 px-3" onClick={() => { resetForm(); setShowLeadForm(true); setView('review'); }}>
-                <Plus size={16} />
-                Add
-              </button>
-            </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
-              <input className="input pl-9" placeholder="Search leads" value={query} onChange={(event) => setQuery(event.target.value)} />
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {focusOptions.map((option) => (
-                <button key={option.value} className={`focus-chip ${focus === option.value ? 'focus-chip-active' : ''}`} onClick={() => setFocus(option.value)}>
-                  <span>{option.label}</span>
-                  <small>{option.hint}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {filteredLeads.map((lead) => (
-              <button key={lead.id} onClick={() => setSelectedId(lead.id)} className={`lead-row ${selectedLead?.id === lead.id ? 'lead-row-active' : ''}`}>
-                <div className="min-w-0 flex-1 text-left">
-                  <div className="truncate text-sm font-semibold">{lead.organisation}</div>
-                  <div className="mt-1 flex items-center gap-1 truncate text-xs text-slate-500">
-                    <MapPin size={13} />
-                    {lead.location || lead.category}
-                  </div>
-                </div>
-                <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>{lead.likelihood}%</span>
-              </button>
-            ))}
-            {filteredLeads.length === 0 && (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">
-                No leads in this queue.
-              </div>
-            )}
-          </div>
-        </aside>
-
-        <section className="space-y-5">
+        <main className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:px-6 lg:px-8">
           {error && <Alert tone="danger" message={error} />}
           {busy && <Alert tone="info" message={`${busy}...`} />}
 
-          {view === 'discover' && (
+          {page === 'dashboard' && (
+            <DashboardPage
+              metrics={metrics}
+              leads={leads}
+              onOpenFinder={() => setPage('finder')}
+              onOpenLeads={() => setPage('leads')}
+              onOpenFollowUps={() => setPage('followups')}
+            />
+          )}
+
+          {page === 'leads' && (
+            <LeadsPage
+              leads={filteredLeads}
+              selectedLead={selectedLead}
+              query={query}
+              focus={focus}
+              showLeadForm={showLeadForm}
+              form={form}
+              editing={Boolean(editingId)}
+              needInput={needInput}
+              busy={Boolean(busy)}
+              duplicateMatches={formDuplicates}
+              selectedDuplicates={selectedDuplicates}
+              onQueryChange={setQuery}
+              onFocusChange={setFocus}
+              onSelectLead={setSelectedId}
+              onAddLead={() => { resetForm(); setShowLeadForm(true); }}
+              onSubmitLead={handleSaveLead}
+              onCancelLead={resetForm}
+              onFormChange={setForm}
+              onNeedInputChange={(value) => {
+                setNeedInput(value);
+                setForm({ ...form, needs: value.split(',').map((item) => item.trim()).filter(Boolean) });
+              }}
+              onEdit={editLead}
+              onGenerate={handleGenerateEmail}
+              onLogContact={handleLogContact}
+              onStatusChange={handleStatusChange}
+            />
+          )}
+
+          {page === 'finder' && (
             <DiscoverPanel
               brief={brief}
               busy={Boolean(busy)}
@@ -496,38 +477,7 @@ export default function App() {
             />
           )}
 
-          {view === 'review' && (
-            <>
-              {showLeadForm ? (
-                <LeadForm
-                  form={form}
-                  editing={Boolean(editingId)}
-                  needInput={needInput}
-                  busy={Boolean(busy)}
-                  onSubmit={handleSaveLead}
-                  onCancel={resetForm}
-                  duplicateMatches={formDuplicates}
-                  onNeedInputChange={(value) => {
-                    setNeedInput(value);
-                    setForm({ ...form, needs: value.split(',').map((item) => item.trim()).filter(Boolean) });
-                  }}
-                  onFormChange={setForm}
-                />
-              ) : (
-                <LeadReviewPanel
-                  lead={selectedLead}
-                  duplicateMatches={selectedDuplicates}
-                  onEdit={editLead}
-                  onGenerate={handleGenerateEmail}
-                  onLogContact={handleLogContact}
-                  onStatusChange={handleStatusChange}
-                  busy={Boolean(busy)}
-                />
-              )}
-            </>
-          )}
-
-          {view === 'draft' && (
+          {page === 'drafts' && (
             <DraftPanel
               lead={selectedLead}
               draft={draft}
@@ -541,8 +491,264 @@ export default function App() {
               duplicateMatches={selectedDuplicates}
             />
           )}
-        </section>
-      </main>
+
+          {page === 'followups' && (
+            <FollowUpsPage leads={leads} onSelectLead={(id) => { setSelectedId(id); setPage('leads'); }} />
+          )}
+
+          {page === 'settings' && <SettingsPage />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+const navItems: { page: AppPage; label: string; icon: React.ReactNode }[] = [
+  { page: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+  { page: 'leads', label: 'Leads', icon: <Users size={18} /> },
+  { page: 'finder', label: 'Lead Finder', icon: <Search size={18} /> },
+  { page: 'drafts', label: 'Email Drafts', icon: <FileText size={18} /> },
+  { page: 'followups', label: 'Follow-Ups', icon: <CalendarClock size={18} /> },
+  { page: 'settings', label: 'Settings', icon: <Settings size={18} /> },
+];
+
+function Sidebar({ page, onPageChange, onSignOut, showSignOut }: { page: AppPage; onPageChange: (page: AppPage) => void; onSignOut: () => void; showSignOut: boolean }) {
+  return (
+    <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white lg:flex lg:min-h-screen lg:flex-col">
+      <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-5">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sky-600 text-white">
+          <Activity size={22} />
+        </div>
+        <div>
+          <div className="text-base font-semibold">Paracare</div>
+          <div className="text-xs font-medium text-slate-500">Outreach</div>
+        </div>
+      </div>
+      <nav className="flex-1 space-y-1 px-3 py-4">
+        {navItems.map((item) => (
+          <button key={item.page} className={`sidebar-link ${page === item.page ? 'sidebar-link-active' : ''}`} onClick={() => onPageChange(item.page)}>
+            {item.icon}
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      {showSignOut && (
+        <div className="border-t border-slate-200 p-3">
+          <button className="sidebar-link" onClick={onSignOut}>
+            <LogOut size={18} />
+            Sign out
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function MobileNav({ page, onPageChange }: { page: AppPage; onPageChange: (page: AppPage) => void }) {
+  return (
+    <nav className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden">
+      {navItems.map((item) => (
+        <button key={item.page} className={`mobile-nav-link ${page === item.page ? 'mobile-nav-link-active' : ''}`} onClick={() => onPageChange(item.page)}>
+          {item.icon}
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function DashboardPage({
+  metrics,
+  leads,
+  onOpenFinder,
+  onOpenLeads,
+  onOpenFollowUps,
+}: {
+  metrics: { total: number; review: number; draftReady: number; followUp: number; contacted: number };
+  leads: Lead[];
+  onOpenFinder: () => void;
+  onOpenLeads: () => void;
+  onOpenFollowUps: () => void;
+}) {
+  const recent = leads.slice(0, 5);
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Outreach workspace</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">A simple place to find referral partners, track every contact, and review emails before sending.</p>
+          </div>
+          <button className="button-primary" onClick={onOpenFinder}>
+            <Search size={17} />
+            Find leads
+          </button>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Saved leads" value={metrics.total.toString()} />
+        <Metric label="Needs review" value={metrics.review.toString()} />
+        <Metric label="Draft ready" value={metrics.draftReady.toString()} />
+        <Metric label="Follow-ups" value={metrics.followUp.toString()} />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold">Recent leads</h3>
+            <button className="text-sm font-semibold text-sky-700" onClick={onOpenLeads}>View all</button>
+          </div>
+          <div className="space-y-2">
+            {recent.length > 0 ? recent.map((lead) => (
+              <div key={lead.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{lead.organisation}</div>
+                  <div className="mt-1 text-xs text-slate-500">{lead.category}</div>
+                </div>
+                <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>{lead.likelihood}%</span>
+              </div>
+            )) : <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No leads saved yet.</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="text-base font-semibold">Next actions</h3>
+          <div className="mt-4 space-y-2">
+            <button className="quick-action" onClick={onOpenLeads}>
+              <Users size={18} />
+              Review new leads
+            </button>
+            <button className="quick-action" onClick={onOpenFollowUps}>
+              <CalendarClock size={18} />
+              Check follow-ups
+            </button>
+            <button className="quick-action" onClick={onOpenFinder}>
+              <Search size={18} />
+              Search a new area
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function LeadsPage({
+  leads,
+  selectedLead,
+  query,
+  focus,
+  showLeadForm,
+  form,
+  editing,
+  needInput,
+  busy,
+  duplicateMatches,
+  selectedDuplicates,
+  onQueryChange,
+  onFocusChange,
+  onSelectLead,
+  onAddLead,
+  onSubmitLead,
+  onCancelLead,
+  onFormChange,
+  onNeedInputChange,
+  onEdit,
+  onGenerate,
+  onLogContact,
+  onStatusChange,
+}: {
+  leads: Lead[];
+  selectedLead: Lead | null;
+  query: string;
+  focus: FocusFilter;
+  showLeadForm: boolean;
+  form: LeadFormInput;
+  editing: boolean;
+  needInput: string;
+  busy: boolean;
+  duplicateMatches: DuplicateMatch[];
+  selectedDuplicates: DuplicateMatch[];
+  onQueryChange: (value: string) => void;
+  onFocusChange: (value: FocusFilter) => void;
+  onSelectLead: (id: string) => void;
+  onAddLead: () => void;
+  onSubmitLead: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCancelLead: () => void;
+  onFormChange: (form: LeadFormInput) => void;
+  onNeedInputChange: (value: string) => void;
+  onEdit: (lead: Lead) => void;
+  onGenerate: () => void;
+  onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void;
+  onStatusChange: (lead: Lead, status: LeadStatus) => void;
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
+      <aside className="space-y-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-base font-semibold">Leads</h2>
+            <button className="button-secondary h-9 px-3" onClick={onAddLead}>
+              <Plus size={16} />
+              Add
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
+            <input className="input pl-9" placeholder="Search leads" value={query} onChange={(event) => onQueryChange(event.target.value)} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {focusOptions.map((option) => (
+              <button key={option.value} className={`focus-chip ${focus === option.value ? 'focus-chip-active' : ''}`} onClick={() => onFocusChange(option.value)}>
+                <span>{option.label}</span>
+                <small>{option.hint}</small>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          {leads.map((lead) => (
+            <button key={lead.id} onClick={() => onSelectLead(lead.id)} className={`lead-row ${selectedLead?.id === lead.id ? 'lead-row-active' : ''}`}>
+              <div className="min-w-0 flex-1 text-left">
+                <div className="truncate text-sm font-semibold">{lead.organisation}</div>
+                <div className="mt-1 flex items-center gap-1 truncate text-xs text-slate-500">
+                  <MapPin size={13} />
+                  {lead.suburb || lead.location || lead.category}
+                </div>
+              </div>
+              <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>{lead.likelihood}%</span>
+            </button>
+          ))}
+          {leads.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No leads in this queue.</div>}
+        </div>
+      </aside>
+
+      {showLeadForm ? (
+        <LeadForm
+          form={form}
+          editing={editing}
+          needInput={needInput}
+          busy={busy}
+          duplicateMatches={duplicateMatches}
+          onSubmit={onSubmitLead}
+          onCancel={onCancelLead}
+          onNeedInputChange={onNeedInputChange}
+          onFormChange={onFormChange}
+        />
+      ) : (
+        <LeadReviewPanel
+          lead={selectedLead}
+          duplicateMatches={selectedDuplicates}
+          onEdit={onEdit}
+          onGenerate={onGenerate}
+          onLogContact={onLogContact}
+          onStatusChange={onStatusChange}
+          busy={busy}
+        />
+      )}
     </div>
   );
 }
@@ -854,6 +1060,58 @@ function DraftPanel({
   );
 }
 
+function FollowUpsPage({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (id: string) => void }) {
+  const followUps = leads
+    .filter((lead) => lead.followUpDate || lead.status === 'follow_up')
+    .sort((a, b) => (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999'));
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="border-b border-slate-100 pb-4">
+        <h2 className="text-2xl font-semibold tracking-tight">Follow-ups</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Upcoming and active follow-up work from saved contact history.</p>
+      </div>
+      <div className="mt-4 space-y-2">
+        {followUps.length > 0 ? followUps.map((lead) => (
+          <button key={lead.id} className="lead-row" onClick={() => onSelectLead(lead.id)}>
+            <div className="min-w-0 flex-1 text-left">
+              <div className="truncate text-sm font-semibold">{lead.organisation}</div>
+              <div className="mt-1 text-xs text-slate-500">{lead.outcome || lead.nextAction || 'Follow up required'}</div>
+            </div>
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
+              {lead.followUpDate ? formatDate(lead.followUpDate) : 'No date'}
+            </span>
+          </button>
+        )) : (
+          <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No follow-ups are due.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage() {
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold tracking-tight">Workspace</h2>
+        <div className="mt-4 space-y-3">
+          <Info icon={<ShieldCheck size={17} />} label="Access" value="Private internal outreach workspace" />
+          <Info icon={<Target size={17} />} label="Duplicate prevention" value="Matches email, organisation, website and phone before saving or contacting." />
+          <Info icon={<Mail size={17} />} label="Email review" value="Drafts are generated for human review before sending." />
+        </div>
+      </section>
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-xl font-semibold tracking-tight">Connection</h2>
+        <div className="mt-4">
+          <StatusPill active={isSupabaseConfigured} />
+          <p className="mt-4 text-sm leading-6 text-slate-600">Supabase stores lead records, contact history and email draft history for the Outreach workspace.</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function HistoryPanel({ lead, onLogContact }: { lead: Lead; onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void }) {
   return (
     <div className="mt-5 grid gap-5 xl:grid-cols-2">
@@ -978,18 +1236,27 @@ function DuplicateMatchList({ matches, compact = false }: { matches: DuplicateMa
   );
 }
 
-function ViewButton({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button className={`view-button ${active ? 'view-button-active' : ''}`} onClick={onClick}>
-      {icon}
-      {label}
-    </button>
-  );
-}
-
 function formatDate(value: string) {
   if (!value) return '';
   return new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+}
+
+function pageTitle(page: AppPage) {
+  if (page === 'dashboard') return 'Dashboard';
+  if (page === 'leads') return 'Leads';
+  if (page === 'finder') return 'Lead Finder';
+  if (page === 'drafts') return 'Email Drafts';
+  if (page === 'followups') return 'Follow-Ups';
+  return 'Settings';
+}
+
+function pageDescription(page: AppPage) {
+  if (page === 'dashboard') return 'A clean overview of current outreach work.';
+  if (page === 'leads') return 'Review saved organisations, contacts and history.';
+  if (page === 'finder') return 'Search area-based healthcare and community leads.';
+  if (page === 'drafts') return 'Generate and review personalised outreach emails.';
+  if (page === 'followups') return 'Track follow-up dates and active contact tasks.';
+  return 'Workspace connection and outreach safeguards.';
 }
 
 function StatusPill({ active }: { active: boolean }) {
