@@ -8,13 +8,11 @@ import {
   Copy,
   Edit3,
   FileText,
-  LayoutDashboard,
   LogOut,
   Mail,
   MapPin,
   Plus,
   Search,
-  Settings,
   ShieldCheck,
   Sparkles,
   Target,
@@ -22,14 +20,13 @@ import {
   Users,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
-import { discoverLeads, generateEmail, listLeads, logContact, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
+import { discoverLeads, generateEmail, listLeads, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
 import { findDuplicateMatches, hasPriorOutreach } from './lib/duplicates';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
-import type { ContactMethod, DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
+import type { DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
 
-type AppPage = 'dashboard' | 'leads' | 'finder' | 'drafts' | 'followups' | 'settings';
-type FocusFilter = 'all' | 'review' | 'draft' | 'follow_up';
+type AppPage = 'finder' | 'leads' | 'drafts' | 'followups';
 
 const categories: LeadCategory[] = [
   'NDIS support coordinator',
@@ -54,13 +51,6 @@ const statuses: { value: LeadStatus; label: string }[] = [
   { value: 'not_interested', label: 'Not interested' },
   { value: 'won', label: 'Won' },
   { value: 'not_fit', label: 'Not fit' },
-];
-
-const focusOptions: { value: FocusFilter; label: string; hint: string }[] = [
-  { value: 'all', label: 'All leads', hint: 'Everything saved' },
-  { value: 'review', label: 'Needs review', hint: 'New and researching' },
-  { value: 'draft', label: 'Ready to draft', hint: 'Qualified and drafted' },
-  { value: 'follow_up', label: 'Follow up', hint: 'Contacted leads' },
 ];
 
 const emptyLead: LeadFormInput = {
@@ -103,8 +93,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [page, setPage] = useState<AppPage>('dashboard');
-  const [focus, setFocus] = useState<FocusFilter>('review');
+  const [page, setPage] = useState<AppPage>('finder');
   const [query, setQuery] = useState('');
   const [form, setForm] = useState<LeadFormInput>(emptyLead);
   const [editingId, setEditingId] = useState<string | undefined>();
@@ -153,18 +142,10 @@ export default function App() {
       .catch((err: Error) => setError(err.message));
   }, [session]);
 
-  const metrics = useMemo(() => {
-    const review = leads.filter((lead) => ['new', 'researching'].includes(lead.status)).length;
-    const draftReady = leads.filter((lead) => ['qualified', 'drafted', 'reviewed'].includes(lead.status)).length;
-    const followUp = leads.filter((lead) => ['contacted', 'follow_up'].includes(lead.status)).length;
-    const contacted = leads.filter((lead) => lead.lastContactedAt || lead.contactHistory.length > 0).length;
-    return { total: leads.length, review, draftReady, followUp, contacted };
-  }, [leads]);
-
   const filteredLeads = useMemo(() => {
     const normalised = query.trim().toLowerCase();
     return leads.filter((lead) => {
-      const matchesQuery = !normalised || [
+      return !normalised || [
         lead.organisation,
         lead.category,
         lead.location,
@@ -178,14 +159,8 @@ export default function App() {
         lead.website,
         lead.notes,
       ].some((value) => value.toLowerCase().includes(normalised));
-
-      if (!matchesQuery) return false;
-      if (focus === 'review') return ['new', 'researching'].includes(lead.status);
-      if (focus === 'draft') return ['qualified', 'drafted', 'reviewed'].includes(lead.status);
-      if (focus === 'follow_up') return ['contacted', 'follow_up'].includes(lead.status);
-      return true;
     });
-  }, [focus, leads, query]);
+  }, [leads, query]);
 
   const selectedLead = leads.find((lead) => lead.id === selectedId) ?? filteredLeads[0] ?? null;
   const selectedDuplicates = selectedLead ? findDuplicateMatches(selectedLead, leads, selectedLead.id) : [];
@@ -242,7 +217,6 @@ export default function App() {
 
       await refresh(savedLeads[0]?.id);
       setPage('leads');
-      setFocus('draft');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lead discovery failed.');
     } finally {
@@ -295,28 +269,6 @@ export default function App() {
   async function handleStatusChange(lead: Lead, status: LeadStatus) {
     const updated = await updateLeadStatus(lead, status);
     setLeads((items) => items.map((item) => (item.id === updated.id ? updated : item)));
-  }
-
-  async function handleLogContact(lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) {
-    if ((hasPriorOutreach(lead) || selectedDuplicates.some((match) => match.lastContactedAt)) && !window.confirm('This organisation or matching contact has previous outreach history. Log another contact anyway?')) {
-      return;
-    }
-
-    setBusy('Logging contact');
-    setError('');
-    try {
-      const updated = await logContact(lead, {
-        emailAddressUsed: '',
-        draftSubject: '',
-        draftBody: '',
-        ...payload,
-      });
-      await refresh(updated.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not log contact.');
-    } finally {
-      setBusy('');
-    }
   }
 
   async function handleMarkEmailSent(lead: Lead, contactedBy: string) {
@@ -455,22 +407,11 @@ export default function App() {
           {error && <Alert tone="danger" message={error} />}
           {busy && <Alert tone="info" message={`${busy}...`} />}
 
-          {page === 'dashboard' && (
-            <DashboardPage
-              metrics={metrics}
-              leads={leads}
-              onOpenFinder={() => setPage('finder')}
-              onOpenLeads={() => setPage('leads')}
-              onOpenFollowUps={() => setPage('followups')}
-            />
-          )}
-
           {page === 'leads' && (
             <LeadsPage
               leads={filteredLeads}
               selectedLead={selectedLead}
               query={query}
-              focus={focus}
               showLeadForm={showLeadForm}
               form={form}
               editing={Boolean(editingId)}
@@ -479,7 +420,6 @@ export default function App() {
               duplicateMatches={formDuplicates}
               selectedDuplicates={selectedDuplicates}
               onQueryChange={setQuery}
-              onFocusChange={setFocus}
               onSelectLead={setSelectedId}
               onAddLead={() => { resetForm(); setShowLeadForm(true); }}
               onSubmitLead={handleSaveLead}
@@ -491,7 +431,6 @@ export default function App() {
               }}
               onEdit={editLead}
               onGenerate={handleGenerateEmail}
-              onLogContact={handleLogContact}
               onStatusChange={handleStatusChange}
             />
           )}
@@ -522,10 +461,8 @@ export default function App() {
           )}
 
           {page === 'followups' && (
-            <FollowUpsPage leads={leads} onSelectLead={(id) => { setSelectedId(id); setPage('leads'); }} />
+            <FollowUpsPage leads={leads} onSelectLead={(id) => { setSelectedId(id); setPage('leads'); }} onStatusChange={handleStatusChange} />
           )}
-
-          {page === 'settings' && <SettingsPage />}
         </main>
       </div>
     </div>
@@ -533,12 +470,10 @@ export default function App() {
 }
 
 const navItems: { page: AppPage; label: string; icon: React.ReactNode }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
-  { page: 'leads', label: 'Leads', icon: <Users size={18} /> },
-  { page: 'finder', label: 'Lead Finder', icon: <Search size={18} /> },
-  { page: 'drafts', label: 'Email Drafts', icon: <FileText size={18} /> },
-  { page: 'followups', label: 'Follow-Ups', icon: <CalendarClock size={18} /> },
-  { page: 'settings', label: 'Settings', icon: <Settings size={18} /> },
+  { page: 'finder', label: 'Search', icon: <Search size={18} /> },
+  { page: 'leads', label: 'Review Leads', icon: <Users size={18} /> },
+  { page: 'drafts', label: 'Draft Emails', icon: <FileText size={18} /> },
+  { page: 'followups', label: 'Contact Log', icon: <CalendarClock size={18} /> },
 ];
 
 function Sidebar({ page, onPageChange, onSignOut, showSignOut }: { page: AppPage; onPageChange: (page: AppPage) => void; onSignOut: () => void; showSignOut: boolean }) {
@@ -586,89 +521,10 @@ function MobileNav({ page, onPageChange }: { page: AppPage; onPageChange: (page:
   );
 }
 
-function DashboardPage({
-  metrics,
-  leads,
-  onOpenFinder,
-  onOpenLeads,
-  onOpenFollowUps,
-}: {
-  metrics: { total: number; review: number; draftReady: number; followUp: number; contacted: number };
-  leads: Lead[];
-  onOpenFinder: () => void;
-  onOpenLeads: () => void;
-  onOpenFollowUps: () => void;
-}) {
-  const recent = leads.slice(0, 5);
-
-  return (
-    <div className="space-y-5">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Autonomous outreach workspace</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Set an area, let the assistant research and rank suitable partners, then review the brief before any email is sent.</p>
-          </div>
-          <button className="button-primary" onClick={onOpenFinder}>
-            <Search size={17} />
-            Find leads
-          </button>
-        </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Saved leads" value={metrics.total.toString()} />
-        <Metric label="Needs review" value={metrics.review.toString()} />
-        <Metric label="Draft ready" value={metrics.draftReady.toString()} />
-        <Metric label="Follow-ups" value={metrics.followUp.toString()} />
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 className="text-base font-semibold">Recent leads</h3>
-            <button className="text-sm font-semibold text-sky-700" onClick={onOpenLeads}>View all</button>
-          </div>
-          <div className="space-y-2">
-            {recent.length > 0 ? recent.map((lead) => (
-              <div key={lead.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{lead.organisation}</div>
-                  <div className="mt-1 text-xs text-slate-500">{lead.category}</div>
-                </div>
-                <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>{lead.likelihood}%</span>
-              </div>
-            )) : <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No leads saved yet.</p>}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-base font-semibold">Next actions</h3>
-          <div className="mt-4 space-y-2">
-            <button className="quick-action" onClick={onOpenLeads}>
-              <Users size={18} />
-              Review new leads
-            </button>
-            <button className="quick-action" onClick={onOpenFollowUps}>
-              <CalendarClock size={18} />
-              Check follow-ups
-            </button>
-            <button className="quick-action" onClick={onOpenFinder}>
-              <Search size={18} />
-              Start area research
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function LeadsPage({
   leads,
   selectedLead,
   query,
-  focus,
   showLeadForm,
   form,
   editing,
@@ -677,7 +533,6 @@ function LeadsPage({
   duplicateMatches,
   selectedDuplicates,
   onQueryChange,
-  onFocusChange,
   onSelectLead,
   onAddLead,
   onSubmitLead,
@@ -686,13 +541,11 @@ function LeadsPage({
   onNeedInputChange,
   onEdit,
   onGenerate,
-  onLogContact,
   onStatusChange,
 }: {
   leads: Lead[];
   selectedLead: Lead | null;
   query: string;
-  focus: FocusFilter;
   showLeadForm: boolean;
   form: LeadFormInput;
   editing: boolean;
@@ -701,7 +554,6 @@ function LeadsPage({
   duplicateMatches: DuplicateMatch[];
   selectedDuplicates: DuplicateMatch[];
   onQueryChange: (value: string) => void;
-  onFocusChange: (value: FocusFilter) => void;
   onSelectLead: (id: string) => void;
   onAddLead: () => void;
   onSubmitLead: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -710,7 +562,6 @@ function LeadsPage({
   onNeedInputChange: (value: string) => void;
   onEdit: (lead: Lead) => void;
   onGenerate: () => void;
-  onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
 }) {
   return (
@@ -718,7 +569,7 @@ function LeadsPage({
       <aside className="space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold">Leads</h2>
+            <h2 className="text-base font-semibold">Lead cards</h2>
             <button className="button-secondary h-9 px-3" onClick={onAddLead}>
               <Plus size={16} />
               Add
@@ -727,14 +578,6 @@ function LeadsPage({
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={17} />
             <input className="input pl-9" placeholder="Search leads" value={query} onChange={(event) => onQueryChange(event.target.value)} />
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {focusOptions.map((option) => (
-              <button key={option.value} className={`focus-chip ${focus === option.value ? 'focus-chip-active' : ''}`} onClick={() => onFocusChange(option.value)}>
-                <span>{option.label}</span>
-                <small>{option.hint}</small>
-              </button>
-            ))}
           </div>
         </div>
 
@@ -773,7 +616,6 @@ function LeadsPage({
           duplicateMatches={selectedDuplicates}
           onEdit={onEdit}
           onGenerate={onGenerate}
-          onLogContact={onLogContact}
           onStatusChange={onStatusChange}
           busy={busy}
         />
@@ -854,7 +696,6 @@ function LeadReviewPanel({
   busy,
   onEdit,
   onGenerate,
-  onLogContact,
   onStatusChange,
 }: {
   lead: Lead | null;
@@ -862,7 +703,6 @@ function LeadReviewPanel({
   busy: boolean;
   onEdit: (lead: Lead) => void;
   onGenerate: () => void;
-  onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
 }) {
   if (!lead) {
@@ -945,27 +785,15 @@ function LeadReviewPanel({
         </div>
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_280px]">
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-800">Positioning</h3>
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm leading-6 text-slate-700">{lead.notes || 'Use this space to capture the likely client need, referral angle, and what should be checked before contacting.'}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {lead.needs.length > 0 ? lead.needs.map((need) => (
-                <span key={need} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">{need}</span>
-              )) : <span className="text-sm text-slate-500">No tags yet.</span>}
-            </div>
-          </div>
-        </div>
-        <div>
-          <h3 className="mb-3 text-sm font-semibold text-slate-800">Next action</h3>
-          <select className="input mb-3" value={lead.status} onChange={(event) => onStatusChange(lead, event.target.value as LeadStatus)}>
+      <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="mb-3 text-sm font-semibold text-slate-800">Review decision</h3>
+        <div className="grid gap-3 md:grid-cols-[240px_1fr]">
+          <select className="input" value={lead.status} onChange={(event) => onStatusChange(lead, event.target.value as LeadStatus)}>
             {statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
           </select>
-          <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm leading-6 text-slate-600">{lead.nextAction || nextActionForStatus(lead.status)}</p>
+          <p className="text-sm leading-6 text-slate-600">{lead.nextAction || nextActionForStatus(lead.status)}</p>
         </div>
       </div>
-      <HistoryPanel lead={lead} onLogContact={onLogContact} />
     </div>
   );
 }
@@ -1142,147 +970,41 @@ function DraftPanel({
   );
 }
 
-function FollowUpsPage({ leads, onSelectLead }: { leads: Lead[]; onSelectLead: (id: string) => void }) {
-  const followUps = leads
-    .filter((lead) => lead.followUpDate || lead.status === 'follow_up')
+function FollowUpsPage({ leads, onSelectLead, onStatusChange }: { leads: Lead[]; onSelectLead: (id: string) => void; onStatusChange: (lead: Lead, status: LeadStatus) => void }) {
+  const contactedLeads = leads
+    .filter((lead) => lead.lastContactedAt || lead.contactHistory.length > 0 || lead.followUpDate || ['contacted', 'follow_up', 'replied', 'interested', 'meeting_booked', 'not_interested'].includes(lead.status))
     .sort((a, b) => (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999'));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="border-b border-slate-100 pb-4">
-        <h2 className="text-2xl font-semibold tracking-tight">Follow-ups</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Upcoming and active follow-up work from saved contact history.</p>
+        <h2 className="text-2xl font-semibold tracking-tight">Contact log</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Track sent emails, replies and follow-up status.</p>
       </div>
       <div className="mt-4 space-y-2">
-        {followUps.length > 0 ? followUps.map((lead) => (
-          <button key={lead.id} className="lead-row" onClick={() => onSelectLead(lead.id)}>
+        {contactedLeads.length > 0 ? contactedLeads.map((lead) => (
+          <div key={lead.id} className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="min-w-0 flex-1 text-left">
               <div className="truncate text-sm font-semibold">{lead.organisation}</div>
-              <div className="mt-1 text-xs text-slate-500">{lead.outcome || lead.nextAction || 'Follow up required'}</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {lead.lastContactedAt ? `Sent ${formatDate(lead.lastContactedAt)}` : 'Not marked sent'}
+                {lead.email ? ` · ${lead.email}` : ''}
+              </div>
             </div>
-            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
-              {lead.followUpDate ? formatDate(lead.followUpDate) : 'No date'}
-            </span>
-          </button>
+            <div className="mt-3 grid gap-3 md:grid-cols-[220px_1fr_auto] md:items-center">
+              <select className="input" value={lead.status} onChange={(event) => onStatusChange(lead, event.target.value as LeadStatus)}>
+                {statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+              </select>
+              <p className="text-sm text-slate-600">{lead.outcome || lead.nextAction || 'Waiting for reply or follow-up.'}</p>
+              <button className="button-secondary" onClick={() => onSelectLead(lead.id)}>Open</button>
+            </div>
+            {lead.followUpDate && <p className="mt-3 text-xs font-semibold text-sky-700">Follow up {formatDate(lead.followUpDate)}</p>}
+          </div>
         )) : (
-          <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No follow-ups are due.</p>
+          <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No sent emails or follow-ups yet.</p>
         )}
       </div>
     </div>
-  );
-}
-
-function SettingsPage() {
-  return (
-    <div className="grid gap-5 xl:grid-cols-2">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold tracking-tight">Workspace</h2>
-        <div className="mt-4 space-y-3">
-          <Info icon={<ShieldCheck size={17} />} label="Access" value="Private internal outreach workspace" />
-          <Info icon={<Target size={17} />} label="Duplicate prevention" value="Matches email, organisation, website and phone before saving or contacting." />
-          <Info icon={<Mail size={17} />} label="Email review" value="Drafts are generated for human review before sending." />
-        </div>
-      </section>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-xl font-semibold tracking-tight">Connection</h2>
-        <div className="mt-4">
-          <StatusPill active={isSupabaseConfigured} />
-          <p className="mt-4 text-sm leading-6 text-slate-600">Supabase stores lead records, contact history and email draft history for the Outreach workspace.</p>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function HistoryPanel({ lead, onLogContact }: { lead: Lead; onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void }) {
-  return (
-    <div className="mt-5 grid gap-5 xl:grid-cols-2">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-800">Contact history</h3>
-        <div className="mt-3 space-y-3">
-          {lead.contactHistory.length > 0 ? lead.contactHistory.map((event) => (
-            <div key={event.id} className="rounded-md bg-white p-3 text-sm ring-1 ring-slate-200">
-              <div className="font-semibold text-slate-800">{event.method.replace('_', ' ')} · {formatDate(event.contactedAt)}</div>
-              <div className="mt-1 text-slate-600">{event.contactedBy || 'Unknown'}{event.outcome ? ` · ${event.outcome}` : ''}</div>
-              {event.emailAddressUsed && <p className="mt-2 text-slate-600">Email used: {event.emailAddressUsed}</p>}
-              {event.draftSubject && <p className="mt-2 text-slate-600">Draft: {event.draftSubject}</p>}
-              {event.notes && <p className="mt-2 text-slate-600">{event.notes}</p>}
-              {event.followUpDate && <p className="mt-2 text-xs font-semibold text-sky-700">Follow up {formatDate(event.followUpDate)}</p>}
-            </div>
-          )) : <p className="text-sm text-slate-500">No contact has been logged yet.</p>}
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <h3 className="text-sm font-semibold text-slate-800">Emails generated</h3>
-        <div className="mt-3 space-y-3">
-          {lead.emailHistory.length > 0 ? lead.emailHistory.map((email) => (
-            <div key={email.id} className="rounded-md bg-white p-3 text-sm ring-1 ring-slate-200">
-              <div className="font-semibold text-slate-800">{email.subject}</div>
-              <div className="mt-1 text-slate-600">Generated {formatDate(email.generatedAt)}{email.createdBy ? ` by ${email.createdBy}` : ''}</div>
-              {email.sentAt && <p className="mt-2 text-xs font-semibold text-emerald-700">Sent {formatDate(email.sentAt)}</p>}
-            </div>
-          )) : <p className="text-sm text-slate-500">No email drafts have been generated yet.</p>}
-        </div>
-      </div>
-
-      <ContactLogForm lead={lead} onLogContact={onLogContact} />
-    </div>
-  );
-}
-
-function ContactLogForm({ lead, onLogContact }: { lead: Lead; onLogContact: (lead: Lead, payload: { method: ContactMethod; contactedAt: string; contactedBy: string; notes: string; outcome: string; followUpDate: string }) => void }) {
-  const [method, setMethod] = useState<ContactMethod>('manual_note');
-  const [contactedAt, setContactedAt] = useState(new Date().toISOString().slice(0, 10));
-  const [contactedBy, setContactedBy] = useState('');
-  const [outcome, setOutcome] = useState('');
-  const [followUpDate, setFollowUpDate] = useState('');
-  const [notes, setNotes] = useState('');
-
-  return (
-    <form
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onLogContact(lead, {
-          method,
-          contactedAt: new Date(contactedAt).toISOString(),
-          contactedBy,
-          notes,
-          outcome,
-          followUpDate,
-        });
-        setNotes('');
-        setOutcome('');
-      }}
-    >
-      <h3 className="text-sm font-semibold text-slate-800">Log manual contact</h3>
-      <div className="mt-3 grid gap-3 md:grid-cols-3">
-        <label>
-          <span className="label">Method</span>
-          <select className="input" value={method} onChange={(event) => setMethod(event.target.value as ContactMethod)}>
-            <option value="manual_note">Manual note</option>
-            <option value="email_sent">Email sent</option>
-            <option value="phone_call">Phone call</option>
-            <option value="meeting">Meeting</option>
-          </select>
-        </label>
-        <Field label="Date contacted" type="date" value={contactedAt} onChange={setContactedAt} required />
-        <Field label="Who contacted them" value={contactedBy} onChange={setContactedBy} />
-        <Field label="Outcome" value={outcome} onChange={setOutcome} />
-        <Field label="Follow-up date" type="date" value={followUpDate} onChange={setFollowUpDate} />
-      </div>
-      <label className="mt-3 block">
-        <span className="label">Notes</span>
-        <textarea className="textarea" value={notes} onChange={(event) => setNotes(event.target.value)} />
-      </label>
-      <div className="mt-3 flex justify-end">
-        <button className="button-primary">
-          <CheckCircle2 size={17} />
-          Save contact log
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -1326,21 +1048,17 @@ function formatDate(value: string) {
 }
 
 function pageTitle(page: AppPage) {
-  if (page === 'dashboard') return 'Dashboard';
-  if (page === 'leads') return 'Leads';
-  if (page === 'finder') return 'Lead Finder';
-  if (page === 'drafts') return 'Email Drafts';
-  if (page === 'followups') return 'Follow-Ups';
-  return 'Settings';
+  if (page === 'finder') return 'Search';
+  if (page === 'leads') return 'Review Leads';
+  if (page === 'drafts') return 'Draft Emails';
+  return 'Contact Log';
 }
 
 function pageDescription(page: AppPage) {
-  if (page === 'dashboard') return 'A clean overview of current outreach work.';
-  if (page === 'leads') return 'Review saved organisations, contacts and history.';
-  if (page === 'finder') return 'Search area-based healthcare and community leads.';
-  if (page === 'drafts') return 'Generate and review personalised outreach emails.';
-  if (page === 'followups') return 'Track follow-up dates and active contact tasks.';
-  return 'Workspace connection and outreach safeguards.';
+  if (page === 'finder') return 'Set the area, lead types and number of leads.';
+  if (page === 'leads') return 'Review one lead card at a time before outreach.';
+  if (page === 'drafts') return 'Review and edit draft emails before sending.';
+  return 'Track sent emails, replies and follow-ups.';
 }
 
 function StatusPill({ active }: { active: boolean }) {
@@ -1349,15 +1067,6 @@ function StatusPill({ active }: { active: boolean }) {
       <span className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-amber-500'}`} />
       {active ? 'Supabase connected' : 'Local demo'}
     </span>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="text-sm font-medium text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-    </div>
   );
 }
 
