@@ -27,7 +27,7 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You write concise, ethical B2B outreach emails for an Australian in-home healthcare provider. Never claim a partnership, never imply endorsement, and keep the draft ready for human review.',
+            content: 'You write concise, ethical B2B outreach emails for an Australian in-home healthcare provider. Use the researched services, likely business needs, suitability summary, concerns and outreach angle. Never claim a partnership, never imply endorsement, never overstate public research, and keep the draft ready for human review before sending.',
           },
           {
             role: 'user',
@@ -61,19 +61,26 @@ serve(async (req) => {
   }
 });
 
-function localDraft(lead: Record<string, string>, tone: string) {
-  const firstName = lead.contactName?.split(' ')[0];
+function localDraft(lead: Record<string, unknown>, tone: string) {
+  const organisation = String(lead.organisation ?? '');
+  const contactName = String(lead.contactName ?? '');
+  const fitSummary = String(lead.fitSummary ?? '');
+  const outreachAngle = String(lead.outreachAngle ?? '');
+  const firstName = contactName ? contactName.split(' ')[0] : '';
+  const services = Array.isArray(lead.servicesOffered) ? lead.servicesOffered.join(', ') : '';
   const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
   return {
-    subject: `Referral support for ${lead.organisation}`,
+    subject: `Referral support for ${organisation}`,
     body: [
       greeting,
       '',
-      `I’m reaching out from Paracare because ${lead.organisation} looks like a relevant organisation for coordinated in-home clinical support.`,
+      `I’m reaching out from Paracare because ${organisation} looks like a relevant organisation for coordinated in-home clinical support.`,
       '',
       'Paracare supports clients who need reliable nursing oversight, clear documentation, and responsive communication between families, coordinators and care teams.',
       '',
-      lead.fitSummary ? `What stood out in our research: ${lead.fitSummary}` : '',
+      services ? `I noticed your services include ${services}.` : '',
+      fitSummary ? `What stood out in our research: ${fitSummary}` : '',
+      outreachAngle ? `The potential fit: ${outreachAngle}` : '',
       '',
       tone === 'concise'
         ? 'Would it be worth a brief conversation next week?'

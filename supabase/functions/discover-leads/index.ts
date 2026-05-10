@@ -9,7 +9,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { location, suburb, postcode, region, radiusKm, categories, notes } = await req.json();
+    const { location, suburb, postcode, region, radiusKm, leadCount = 10, categories, notes } = await req.json();
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     const searchKey = Deno.env.get('TAVILY_API_KEY');
 
@@ -22,14 +22,14 @@ serve(async (req) => {
           api_key: searchKey,
           query: `${categories.join(' OR ')} near ${suburb ?? ''} ${postcode ?? ''} ${region ?? location ?? ''} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`,
           search_depth: 'advanced',
-          max_results: 10,
+          max_results: Math.min(20, Math.max(leadCount * 2, 10)),
         }),
       });
       if (searchResponse.ok) searchResults = JSON.stringify(await searchResponse.json());
     }
 
     if (!openAiKey) {
-      return Response.json({ leads: fallbackLeads({ location, suburb, postcode, region, radiusKm, categories, notes }) }, { headers: corsHeaders });
+      return Response.json({ leads: fallbackLeads({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes }) }, { headers: corsHeaders });
     }
 
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -43,11 +43,11 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You are an autonomous healthcare outreach research assistant for Paracare. Extract likely Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Gather only public facts. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, analyse likely business needs, whether Paracare is a good fit, the best outreach angle, and confidence in the research. Only return candidates that are plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.',
+            content: `You are an autonomous healthcare outreach research assistant for Paracare. Return up to ${leadCount} suitable Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Gather only public facts. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, list services offered, analyse likely business needs, explain whether Paracare is a good fit, identify concerns, choose the best outreach angle, and provide a priority score. Only return candidates that are plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.`,
           },
           {
             role: 'user',
-            content: JSON.stringify({ location, suburb, postcode, region, radiusKm, categories, notes, searchResults }),
+            content: JSON.stringify({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes, searchResults }),
           },
         ],
         text: {
@@ -64,7 +64,7 @@ serve(async (req) => {
                   items: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
+                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'servicesOffered', 'concerns', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
                     properties: {
                       organisation: { type: 'string' },
                       category: { type: 'string' },
@@ -83,6 +83,8 @@ serve(async (req) => {
                       fitSummary: { type: 'string' },
                       suitabilitySummary: { type: 'string' },
                       businessNeeds: { type: 'array', items: { type: 'string' } },
+                      servicesOffered: { type: 'array', items: { type: 'string' } },
+                      concerns: { type: 'array', items: { type: 'string' } },
                       outreachAngle: { type: 'string' },
                       researchConfidence: { type: 'number' },
                       needs: { type: 'array', items: { type: 'string' } },
@@ -109,10 +111,12 @@ serve(async (req) => {
   }
 });
 
-function fallbackLeads({ location, suburb, postcode, region, radiusKm, categories, notes }: { location: string; suburb: string; postcode: string; region: string; radiusKm: number | null; categories: string[]; notes: string }) {
+function fallbackLeads({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes }: { location: string; suburb: string; postcode: string; region: string; radiusKm: number | null; leadCount: number; categories: string[]; notes: string }) {
   const area = [suburb, postcode, region].filter(Boolean).join(' ') || location;
 
-  return categories.slice(0, 4).map((category, index) => ({
+  return Array.from({ length: Math.max(1, leadCount || 5) }, (_, index) => {
+    const category = categories[index % categories.length];
+    return ({
     organisation: `${area || 'Local'} ${category} candidate`,
     category,
     website: '',
@@ -130,6 +134,8 @@ function fallbackLeads({ location, suburb, postcode, region, radiusKm, categorie
     fitSummary: 'Search provider not configured. Verify this placeholder with public research before outreach.',
     suitabilitySummary: 'Autonomous research could not verify this candidate yet because live search/AI provider secrets are not fully configured.',
     businessNeeds: ['Referral pathway', 'Clinical support', 'Care coordination'],
+    servicesOffered: ['Public services not verified'],
+    concerns: ['Live search provider is not configured. Human verification required.'],
     outreachAngle: 'Verify fit and public contact details before generating a human-reviewed email.',
     researchConfidence: 25,
     needs: ['Referral pathway', 'Clinical support', 'Care coordination'],
@@ -137,5 +143,6 @@ function fallbackLeads({ location, suburb, postcode, region, radiusKm, categorie
     nextAction: 'Verify organisation, website, decision maker and contact email.',
     notes,
     lastContactedAt: null,
-  }));
+  });
+  });
 }

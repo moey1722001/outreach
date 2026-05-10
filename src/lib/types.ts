@@ -14,6 +14,10 @@ export type LeadStatus =
   | 'reviewed'
   | 'contacted'
   | 'follow_up'
+  | 'replied'
+  | 'interested'
+  | 'meeting_booked'
+  | 'not_interested'
   | 'won'
   | 'not_fit';
 
@@ -27,6 +31,9 @@ export interface ContactEvent {
   method: ContactMethod;
   contactedAt: string;
   contactedBy: string;
+  emailAddressUsed: string;
+  draftSubject: string;
+  draftBody: string;
   notes: string;
   outcome: string;
   followUpDate: string;
@@ -64,6 +71,8 @@ export interface Lead {
   fitSummary: string;
   suitabilitySummary: string;
   businessNeeds: string[];
+  servicesOffered: string[];
+  concerns: string[];
   outreachAngle: string;
   researchConfidence: number;
   needs: string[];
@@ -91,6 +100,7 @@ export interface SearchBrief {
   postcode: string;
   region: string;
   radiusKm: number | null;
+  leadCount: number;
   categories: LeadCategory[];
   notes: string;
 }

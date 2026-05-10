@@ -48,6 +48,10 @@ const statuses: { value: LeadStatus; label: string }[] = [
   { value: 'reviewed', label: 'Reviewed' },
   { value: 'contacted', label: 'Contacted' },
   { value: 'follow_up', label: 'Follow-up' },
+  { value: 'replied', label: 'Replied' },
+  { value: 'interested', label: 'Interested' },
+  { value: 'meeting_booked', label: 'Meeting booked' },
+  { value: 'not_interested', label: 'Not interested' },
   { value: 'won', label: 'Won' },
   { value: 'not_fit', label: 'Not fit' },
 ];
@@ -76,6 +80,8 @@ const emptyLead: LeadFormInput = {
   fitSummary: '',
   suitabilitySummary: '',
   businessNeeds: [],
+  servicesOffered: [],
+  concerns: [],
   outreachAngle: '',
   researchConfidence: 0,
   needs: [],
@@ -110,6 +116,7 @@ export default function App() {
     postcode: '',
     region: 'Sydney',
     radiusKm: 10,
+    leadCount: 10,
     categories: ['NDIS support coordinator', 'Home Care Package provider', 'GP clinic'],
     notes: 'Prioritise organisations likely to refer clients who need in-home nursing and responsive escalation.',
   });
@@ -218,17 +225,24 @@ export default function App() {
   }
 
   async function handleDiscover() {
-    setBusy('Finding leads');
+    setBusy('Researching leads and drafting emails');
     setError('');
     try {
       const discoveries = await discoverLeads(brief);
+      const savedLeads: Lead[] = [];
+      const duplicatePool = [...leads];
+
       for (const lead of discoveries) {
-        if (findDuplicateMatches(lead, leads, lead.id).length > 0) continue;
-        await saveLead({ ...lead, likelihood: lead.likelihood }, lead.id);
+        if (findDuplicateMatches(lead, duplicatePool, lead.id).length > 0) continue;
+        const savedLead = await saveLead({ ...lead, status: 'drafted', likelihood: lead.likelihood }, lead.id);
+        duplicatePool.push(savedLead);
+        savedLeads.push(savedLead);
+        await generateEmail(savedLead, tone, session?.user.email ?? 'Autonomous research');
       }
-      await refresh(discoveries[0]?.id);
+
+      await refresh(savedLeads[0]?.id);
       setPage('leads');
-      setFocus('review');
+      setFocus('draft');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lead discovery failed.');
     } finally {
@@ -291,7 +305,12 @@ export default function App() {
     setBusy('Logging contact');
     setError('');
     try {
-      const updated = await logContact(lead, payload);
+      const updated = await logContact(lead, {
+        emailAddressUsed: '',
+        draftSubject: '',
+        draftBody: '',
+        ...payload,
+      });
       await refresh(updated.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not log contact.');
@@ -337,6 +356,8 @@ export default function App() {
       fitSummary: lead.fitSummary,
       suitabilitySummary: lead.suitabilitySummary,
       businessNeeds: lead.businessNeeds,
+      servicesOffered: lead.servicesOffered,
+      concerns: lead.concerns,
       outreachAngle: lead.outreachAngle,
       researchConfidence: lead.researchConfidence,
       needs: lead.needs,
@@ -782,14 +803,20 @@ function DiscoverPanel({
           Area research autopilot
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">Set the area, then let the app research</h2>
-        <p className="text-sm leading-6 text-slate-600">The assistant searches the area, gathers candidate information, ranks suitability, and saves only non-duplicate leads for human review.</p>
+        <p className="text-sm leading-6 text-slate-600">The assistant searches the area, gathers candidate information, ranks suitability, generates draft emails, and saves only non-duplicate leads for human review.</p>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-4">
+      <div className="mt-5 grid gap-4 lg:grid-cols-5">
         <Field label="Suburb" value={brief.suburb} onChange={(value) => onBriefChange({ ...brief, suburb: value, location: [value, brief.postcode, brief.region].filter(Boolean).join(' ') })} />
         <Field label="Postcode" value={brief.postcode} onChange={(value) => onBriefChange({ ...brief, postcode: value, location: [brief.suburb, value, brief.region].filter(Boolean).join(' ') })} />
         <Field label="Region" value={brief.region} onChange={(value) => onBriefChange({ ...brief, region: value, location: [brief.suburb, brief.postcode, value].filter(Boolean).join(' ') })} />
         <Field label="Radius km" type="number" value={brief.radiusKm?.toString() ?? ''} onChange={(value) => onBriefChange({ ...brief, radiusKm: value ? Number(value) : null })} />
+        <label className="block">
+          <span className="label">Lead count</span>
+          <select className="input" value={brief.leadCount} onChange={(event) => onBriefChange({ ...brief, leadCount: Number(event.target.value) })}>
+            {[5, 10, 15, 20].map((count) => <option key={count} value={count}>{count}</option>)}
+          </select>
+        </label>
       </div>
 
       <div className="mt-4">
@@ -813,7 +840,7 @@ function DiscoverPanel({
 
       <div className="mt-5 flex justify-end">
         <button onClick={onDiscover} disabled={busy || brief.categories.length === 0} className="button-primary">
-          Run autonomous search
+          Research and draft {brief.leadCount} leads
           <ArrowRight size={17} />
         </button>
       </div>
@@ -892,6 +919,14 @@ function LeadReviewPanel({
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Services found</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(lead.servicesOffered.length > 0 ? lead.servicesOffered : ['Services not verified']).map((service) => (
+                <span key={service} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-sky-100">{service}</span>
+              ))}
+            </div>
+          </div>
+          <div>
             <div className="text-xs font-semibold uppercase text-slate-500">Likely business needs</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {(lead.businessNeeds.length > 0 ? lead.businessNeeds : lead.needs).map((need) => (
@@ -902,6 +937,10 @@ function LeadReviewPanel({
           <div>
             <div className="text-xs font-semibold uppercase text-slate-500">Recommended outreach angle</div>
             <p className="mt-2 text-sm leading-6 text-slate-700">{lead.outreachAngle || lead.nextAction || 'Review the fit before generating an email.'}</p>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Concerns</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{lead.concerns.length > 0 ? lead.concerns.join(' ') : 'No major concerns recorded.'}</p>
           </div>
         </div>
       </div>
@@ -1034,6 +1073,7 @@ function DraftPanel({
   onMarkSent: (lead: Lead, contactedBy: string) => void;
 }) {
   const [contactedBy, setContactedBy] = useState('');
+  const shownDraft = draft ?? lead?.emailHistory[0] ?? null;
 
   if (!lead) {
     return (
@@ -1066,19 +1106,19 @@ function DraftPanel({
         </div>
       </div>
 
-      {draft ? (
+      {shownDraft ? (
         <div className="mt-5 space-y-3">
           <label className="block">
             <span className="label">Subject</span>
-            <input className="input" value={draft.subject} onChange={(event) => onDraftChange({ ...draft, subject: event.target.value })} />
+            <input className="input" value={shownDraft.subject} onChange={(event) => onDraftChange({ subject: event.target.value, body: shownDraft.body })} />
           </label>
           <label className="block">
             <span className="label">Body</span>
-            <textarea className="textarea min-h-96 font-mono text-sm" value={draft.body} onChange={(event) => onDraftChange({ ...draft, body: event.target.value })} />
+            <textarea className="textarea min-h-96 font-mono text-sm" value={shownDraft.body} onChange={(event) => onDraftChange({ subject: shownDraft.subject, body: event.target.value })} />
           </label>
           <div className="flex flex-wrap justify-end gap-2">
             <input className="input max-w-56" placeholder="Who contacted them?" value={contactedBy} onChange={(event) => setContactedBy(event.target.value)} />
-            <button className="button-secondary" onClick={() => navigator.clipboard.writeText(`Subject: ${draft.subject}\n\n${draft.body}`)}>
+            <button className="button-secondary" onClick={() => navigator.clipboard.writeText(`Subject: ${shownDraft.subject}\n\n${shownDraft.body}`)}>
               <Copy size={17} />
               Copy
             </button>
@@ -1164,6 +1204,8 @@ function HistoryPanel({ lead, onLogContact }: { lead: Lead; onLogContact: (lead:
             <div key={event.id} className="rounded-md bg-white p-3 text-sm ring-1 ring-slate-200">
               <div className="font-semibold text-slate-800">{event.method.replace('_', ' ')} · {formatDate(event.contactedAt)}</div>
               <div className="mt-1 text-slate-600">{event.contactedBy || 'Unknown'}{event.outcome ? ` · ${event.outcome}` : ''}</div>
+              {event.emailAddressUsed && <p className="mt-2 text-slate-600">Email used: {event.emailAddressUsed}</p>}
+              {event.draftSubject && <p className="mt-2 text-slate-600">Draft: {event.draftSubject}</p>}
               {event.notes && <p className="mt-2 text-slate-600">{event.notes}</p>}
               {event.followUpDate && <p className="mt-2 text-xs font-semibold text-sky-700">Follow up {formatDate(event.followUpDate)}</p>}
             </div>
@@ -1365,6 +1407,10 @@ function nextActionForStatus(status: LeadStatus): string {
   if (status === 'reviewed') return 'Send the email outside the app, then mark as contacted.';
   if (status === 'contacted') return 'Set a follow-up reminder after a few business days.';
   if (status === 'follow_up') return 'Follow up with a short, useful note.';
+  if (status === 'replied') return 'Review the reply and decide whether they are interested, need follow-up, or are not a fit.';
+  if (status === 'interested') return 'Qualify the opportunity and suggest a meeting time.';
+  if (status === 'meeting_booked') return 'Prepare notes for the meeting and capture the referral opportunity.';
+  if (status === 'not_interested') return 'Stop outreach unless they ask to be contacted later.';
   if (status === 'won') return 'Capture what worked so future outreach can reuse it.';
   return 'Keep notes for why this lead is not a fit.';
 }

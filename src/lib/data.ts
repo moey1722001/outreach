@@ -26,6 +26,8 @@ const sampleLeads: Lead[] = [
     fitSummary: 'Strong referral pathway for participants needing responsive clinical oversight at home.',
     suitabilitySummary: 'Likely suitable because support coordinators regularly need reliable clinical partners for participants with complex home-care needs.',
     businessNeeds: ['Responsive escalation', 'Clear family communication', 'Reliable home nursing availability'],
+    servicesOffered: ['NDIS support coordination', 'Participant care planning'],
+    concerns: ['Verify current referral pathways and preferred clinical providers.'],
     outreachAngle: 'Position Paracare as a dependable clinical partner for complex participants who need better visibility and escalation.',
     researchConfidence: 72,
     needs: ['Complex disability support', 'Care coordination', 'Family communication'],
@@ -55,6 +57,8 @@ const sampleLeads: Lead[] = [
     fitSummary: 'Good fit for older clients needing nursing, reporting and coordinated follow-up.',
     suitabilitySummary: 'Promising fit for care managers coordinating older clients who need nursing oversight and timely documentation.',
     businessNeeds: ['Medication oversight', 'Incident reporting', 'Coordinated home visits'],
+    servicesOffered: ['Home Care Package coordination', 'Care management'],
+    concerns: ['Confirm whether they work with external nursing providers.'],
     outreachAngle: 'Lead with Paracare’s clinical documentation, follow-up reliability and family updates.',
     researchConfidence: 68,
     needs: ['Home nursing', 'Medication oversight', 'Incident reporting'],
@@ -88,6 +92,8 @@ function hydrateLead(partial: Partial<Lead> & Pick<Lead, 'id' | 'organisation' |
     fitSummary: partial.fitSummary ?? '',
     suitabilitySummary: partial.suitabilitySummary ?? '',
     businessNeeds: partial.businessNeeds ?? [],
+    servicesOffered: partial.servicesOffered ?? [],
+    concerns: partial.concerns ?? [],
     outreachAngle: partial.outreachAngle ?? '',
     researchConfidence: partial.researchConfidence ?? 0,
     needs: partial.needs ?? [],
@@ -128,6 +134,8 @@ function fromDb(row: Record<string, unknown>): Lead {
     fitSummary: (row.fit_summary as string | null) ?? '',
     suitabilitySummary: (row.suitability_summary as string | null) ?? '',
     businessNeeds: (row.business_needs as string[] | null) ?? [],
+    servicesOffered: (row.services_offered as string[] | null) ?? [],
+    concerns: (row.concerns as string[] | null) ?? [],
     outreachAngle: (row.outreach_angle as string | null) ?? '',
     researchConfidence: (row.research_confidence as number | null) ?? 0,
     needs: (row.needs as string[] | null) ?? [],
@@ -152,6 +160,9 @@ function fromContactEventDb(row: Record<string, unknown>): ContactEvent {
     method: row.method as ContactMethod,
     contactedAt: row.contacted_at as string,
     contactedBy: (row.contacted_by as string | null) ?? '',
+    emailAddressUsed: (row.email_address_used as string | null) ?? '',
+    draftSubject: (row.draft_subject as string | null) ?? '',
+    draftBody: (row.draft_body as string | null) ?? '',
     notes: (row.notes as string | null) ?? '',
     outcome: (row.outcome as string | null) ?? '',
     followUpDate: (row.follow_up_date as string | null) ?? '',
@@ -193,6 +204,8 @@ function toDb(lead: Lead) {
     fit_summary: lead.fitSummary || null,
     suitability_summary: lead.suitabilitySummary || null,
     business_needs: lead.businessNeeds,
+    services_offered: lead.servicesOffered,
+    concerns: lead.concerns,
     outreach_angle: lead.outreachAngle || null,
     research_confidence: lead.researchConfidence,
     needs: lead.needs,
@@ -222,6 +235,12 @@ function readLocalLeads(): Lead[] {
 
 function writeLocalLeads(leads: Lead[]) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(leads));
+}
+
+function defaultFollowUpDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 7);
+  return date.toISOString().slice(0, 10);
 }
 
 export async function listLeads(): Promise<Lead[]> {
@@ -299,6 +318,9 @@ export async function logContact(lead: Lead, event: Omit<ContactEvent, 'id' | 'l
     method: contactEvent.method,
     contacted_at: contactEvent.contactedAt,
     contacted_by: contactEvent.contactedBy || null,
+    email_address_used: contactEvent.emailAddressUsed || null,
+    draft_subject: contactEvent.draftSubject || null,
+    draft_body: contactEvent.draftBody || null,
     notes: contactEvent.notes || null,
     outcome: contactEvent.outcome || null,
     follow_up_date: contactEvent.followUpDate || null,
@@ -320,9 +342,12 @@ export async function markLatestEmailSent(lead: Lead, contactedBy: string, sentA
       method: 'email_sent',
       contactedAt: sentAt,
       contactedBy,
+      emailAddressUsed: lead.email,
+      draftSubject: latest.subject,
+      draftBody: latest.body,
       notes: `Email sent: ${latest.subject}`,
       outcome: 'Email sent',
-      followUpDate: lead.followUpDate,
+      followUpDate: lead.followUpDate || defaultFollowUpDate(),
     });
   }
 
@@ -333,9 +358,12 @@ export async function markLatestEmailSent(lead: Lead, contactedBy: string, sentA
     method: 'email_sent',
     contactedAt: sentAt,
     contactedBy,
+    emailAddressUsed: lead.email,
+    draftSubject: latest.subject,
+    draftBody: latest.body,
     notes: `Email sent: ${latest.subject}`,
     outcome: 'Email sent',
-    followUpDate: lead.followUpDate,
+    followUpDate: lead.followUpDate || defaultFollowUpDate(),
   });
 }
 
@@ -402,7 +430,8 @@ function createLocalDiscoveries(brief: SearchBrief): Lead[] {
   const timestamp = now();
   const place = [brief.suburb, brief.postcode, brief.region].filter(Boolean).join(' ') || brief.location || 'Local';
 
-  return brief.categories.slice(0, 4).map((category, index) => {
+  return Array.from({ length: Math.max(1, brief.leadCount || 5) }, (_, index) => {
+    const category = brief.categories[index % brief.categories.length];
     const lead = hydrateLead({
       id: crypto.randomUUID(),
       organisation: `${place} ${category.replace(' provider', '').replace(' clinic', '')} Network`,
@@ -422,6 +451,8 @@ function createLocalDiscoveries(brief: SearchBrief): Lead[] {
       fitSummary: 'AI research placeholder. Connect Supabase Edge Functions with a search API to enrich this lead.',
       suitabilitySummary: 'Autonomous research could not verify this candidate yet. Treat as a placeholder until the search function is connected.',
       businessNeeds: ['Referral pathway', 'Clinical support', 'Responsive follow-up'],
+      servicesOffered: ['Public services not verified'],
+      concerns: ['Live search provider is not configured. Human verification required.'],
       outreachAngle: 'Verify fit before drafting an email.',
       researchConfidence: 25,
       needs: ['Referral pathway', 'Clinical support', 'Responsive follow-up'],
