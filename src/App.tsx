@@ -74,6 +74,10 @@ const emptyLead: LeadFormInput = {
   phone: '',
   status: 'new',
   fitSummary: '',
+  suitabilitySummary: '',
+  businessNeeds: [],
+  outreachAngle: '',
+  researchConfidence: 0,
   needs: [],
   source: '',
   nextAction: '',
@@ -331,6 +335,10 @@ export default function App() {
       status: lead.status,
       likelihood: lead.likelihood,
       fitSummary: lead.fitSummary,
+      suitabilitySummary: lead.suitabilitySummary,
+      businessNeeds: lead.businessNeeds,
+      outreachAngle: lead.outreachAngle,
+      researchConfidence: lead.researchConfidence,
       needs: lead.needs,
       source: lead.source,
       nextAction: lead.nextAction,
@@ -577,8 +585,8 @@ function DashboardPage({
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Outreach workspace</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">A simple place to find referral partners, track every contact, and review emails before sending.</p>
+            <h2 className="text-2xl font-semibold tracking-tight">Autonomous outreach workspace</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Set an area, let the assistant research and rank suitable partners, then review the brief before any email is sent.</p>
           </div>
           <button className="button-primary" onClick={onOpenFinder}>
             <Search size={17} />
@@ -626,7 +634,7 @@ function DashboardPage({
             </button>
             <button className="quick-action" onClick={onOpenFinder}>
               <Search size={18} />
-              Search a new area
+              Start area research
             </button>
           </div>
         </div>
@@ -771,10 +779,10 @@ function DiscoverPanel({
       <div className="flex flex-col gap-2 border-b border-slate-100 pb-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-sky-700">
           <Sparkles size={18} />
-          Lead discovery
+          Area research autopilot
         </div>
-        <h2 className="text-2xl font-semibold tracking-tight">Find likely referral partners</h2>
-        <p className="text-sm leading-6 text-slate-600">Search by suburb, postcode, region and radius. New, non-duplicate results go straight into the review queue.</p>
+        <h2 className="text-2xl font-semibold tracking-tight">Set the area, then let the app research</h2>
+        <p className="text-sm leading-6 text-slate-600">The assistant searches the area, gathers candidate information, ranks suitability, and saves only non-duplicate leads for human review.</p>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-4">
@@ -805,7 +813,7 @@ function DiscoverPanel({
 
       <div className="mt-5 flex justify-end">
         <button onClick={onDiscover} disabled={busy || brief.categories.length === 0} className="button-primary">
-          Find leads
+          Run autonomous search
           <ArrowRight size={17} />
         </button>
       </div>
@@ -870,6 +878,32 @@ function LeadReviewPanel({
         <Info icon={<UserRound size={17} />} label="Person to reach" value={[lead.contactName, lead.contactRole].filter(Boolean).join(' · ') || 'Find the decision maker'} />
         <Info icon={<Mail size={17} />} label="Email" value={lead.email || 'Needs verification'} />
         <Info icon={<MapPin size={17} />} label="Area" value={[lead.suburb, lead.postcode, lead.region, lead.radiusKm ? `${lead.radiusKm}km` : ''].filter(Boolean).join(' · ') || lead.location || 'Not set'} />
+      </div>
+
+      <div className="mt-5 rounded-lg border border-sky-100 bg-sky-50 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-sky-900">Autonomous suitability brief</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{lead.suitabilitySummary || lead.fitSummary || 'No autonomous suitability brief has been saved for this lead yet.'}</p>
+          </div>
+          <span className="shrink-0 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">
+            Confidence {lead.researchConfidence || lead.likelihood}%
+          </span>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Likely business needs</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(lead.businessNeeds.length > 0 ? lead.businessNeeds : lead.needs).map((need) => (
+                <span key={need} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-sky-100">{need}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-slate-500">Recommended outreach angle</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{lead.outreachAngle || lead.nextAction || 'Review the fit before generating an email.'}</p>
+          </div>
+        </div>
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_280px]">
@@ -951,6 +985,14 @@ function LeadForm({
       <label className="mt-3 block">
         <span className="label">Fit summary</span>
         <textarea className="textarea" value={form.fitSummary} onChange={(event) => onFormChange({ ...form, fitSummary: event.target.value })} />
+      </label>
+      <label className="mt-3 block">
+        <span className="label">Autonomous suitability brief</span>
+        <textarea className="textarea" value={form.suitabilitySummary} onChange={(event) => onFormChange({ ...form, suitabilitySummary: event.target.value })} />
+      </label>
+      <label className="mt-3 block">
+        <span className="label">Recommended outreach angle</span>
+        <textarea className="textarea" value={form.outreachAngle} onChange={(event) => onFormChange({ ...form, outreachAngle: event.target.value })} />
       </label>
       <label className="mt-3 block">
         <span className="label">Positioning notes</span>

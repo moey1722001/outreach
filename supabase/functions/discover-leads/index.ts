@@ -43,7 +43,7 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You are a careful healthcare partnership researcher. Extract likely Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. Score based on area fit, role fit, referral relevance, public evidence and likely need.',
+            content: 'You are an autonomous healthcare outreach research assistant for Paracare. Extract likely Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Gather only public facts. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, analyse likely business needs, whether Paracare is a good fit, the best outreach angle, and confidence in the research. Only return candidates that are plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.',
           },
           {
             role: 'user',
@@ -64,7 +64,7 @@ serve(async (req) => {
                   items: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
+                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
                     properties: {
                       organisation: { type: 'string' },
                       category: { type: 'string' },
@@ -81,6 +81,10 @@ serve(async (req) => {
                       status: { type: 'string' },
                       likelihood: { type: 'number' },
                       fitSummary: { type: 'string' },
+                      suitabilitySummary: { type: 'string' },
+                      businessNeeds: { type: 'array', items: { type: 'string' } },
+                      outreachAngle: { type: 'string' },
+                      researchConfidence: { type: 'number' },
                       needs: { type: 'array', items: { type: 'string' } },
                       source: { type: 'string' },
                       nextAction: { type: 'string' },
@@ -124,6 +128,10 @@ function fallbackLeads({ location, suburb, postcode, region, radiusKm, categorie
     status: 'researching',
     likelihood: 72 - index * 5,
     fitSummary: 'Search provider not configured. Verify this placeholder with public research before outreach.',
+    suitabilitySummary: 'Autonomous research could not verify this candidate yet because live search/AI provider secrets are not fully configured.',
+    businessNeeds: ['Referral pathway', 'Clinical support', 'Care coordination'],
+    outreachAngle: 'Verify fit and public contact details before generating a human-reviewed email.',
+    researchConfidence: 25,
     needs: ['Referral pathway', 'Clinical support', 'Care coordination'],
     source: 'Fallback discovery',
     nextAction: 'Verify organisation, website, decision maker and contact email.',

@@ -17,7 +17,7 @@ const priorityCategories = new Set([
   'Aged care provider',
 ]);
 
-export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' | 'website' | 'needs' | 'location' | 'notes'>): number {
+export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' | 'website' | 'needs' | 'location' | 'notes'> & Partial<Pick<Lead, 'businessNeeds' | 'suitabilitySummary' | 'outreachAngle'>>): number {
   let score = 42;
   const role = lead.contactRole.toLowerCase();
   const notes = lead.notes.toLowerCase();
@@ -27,6 +27,9 @@ export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' 
   if (lead.website) score += 8;
   if (lead.location) score += 6;
   if (lead.needs.length > 0) score += Math.min(14, lead.needs.length * 5);
+  if ((lead.businessNeeds?.length ?? 0) > 0) score += Math.min(10, (lead.businessNeeds?.length ?? 0) * 4);
+  if (lead.suitabilitySummary) score += 6;
+  if (lead.outreachAngle) score += 4;
   if (highIntentRoles.some((term) => role.includes(term))) score += 14;
   if (notes.includes('referral') || notes.includes('complex') || notes.includes('transition')) score += 8;
   if (notes.includes('not accepting') || notes.includes('closed')) score -= 20;

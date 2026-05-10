@@ -62,6 +62,10 @@ export interface Lead {
   status: LeadStatus;
   likelihood: number;
   fitSummary: string;
+  suitabilitySummary: string;
+  businessNeeds: string[];
+  outreachAngle: string;
+  researchConfidence: number;
   needs: string[];
   source: string;
   nextAction: string;
