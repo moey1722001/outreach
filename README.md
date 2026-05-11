@@ -23,6 +23,8 @@ VITE_OUTREACH_SUPABASE_URL=https://YOUR_OUTREACH_PROJECT_REF.supabase.co
 VITE_OUTREACH_SUPABASE_ANON_KEY=your_outreach_supabase_anon_key_here
 ```
 
+The deployed app also includes the public Outreach Supabase URL and publishable anon key as a fallback so it cannot accidentally fall back to the clinical Paracare project or local demo mode. Environment variables are still recommended for future project/key rotation.
+
 Edge Function secrets for AI/search:
 
 ```bash
