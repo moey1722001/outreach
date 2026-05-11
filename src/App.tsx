@@ -37,20 +37,20 @@ const categories: LeadCategory[] = [
   'Allied health provider',
 ];
 
-const statuses: { value: LeadStatus; label: string }[] = [
-  { value: 'new', label: 'New' },
-  { value: 'researching', label: 'Researching' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'drafted', label: 'Drafted' },
-  { value: 'reviewed', label: 'Reviewed' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'follow_up', label: 'Follow-up' },
+const reviewStatuses: { value: LeadStatus; label: string }[] = [
+  { value: 'qualified', label: 'Ready to review' },
+  { value: 'drafted', label: 'Draft ready' },
+  { value: 'contacted', label: 'Email sent' },
+  { value: 'follow_up', label: 'No reply' },
   { value: 'replied', label: 'Replied' },
-  { value: 'interested', label: 'Interested' },
-  { value: 'meeting_booked', label: 'Meeting booked' },
-  { value: 'not_interested', label: 'Not interested' },
-  { value: 'won', label: 'Won' },
-  { value: 'not_fit', label: 'Not fit' },
+  { value: 'not_fit', label: 'Not suitable' },
+];
+
+const contactLogStatuses: { value: LeadStatus; label: string }[] = [
+  { value: 'contacted', label: 'Email sent' },
+  { value: 'follow_up', label: 'No reply' },
+  { value: 'replied', label: 'Replied' },
+  { value: 'not_fit', label: 'Not suitable' },
 ];
 
 const decisionMakerGuide: Record<LeadCategory, { primary: string; reason: string }> = {
@@ -883,7 +883,7 @@ function LeadReviewPanel({
         <h3 className="mb-3 text-sm font-semibold text-slate-800">Review decision</h3>
         <div className="grid gap-3 md:grid-cols-[240px_1fr]">
           <select className="input" value={lead.status} onChange={(event) => onStatusChange(lead, event.target.value as LeadStatus)}>
-            {statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+            {reviewStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
           </select>
           <p className="text-sm leading-6 text-slate-600">{lead.nextAction || nextActionForStatus(lead.status)}</p>
         </div>
@@ -1048,9 +1048,9 @@ function DraftPanel({
               <Mail size={17} />
               Mark sent
             </button>
-            <button className="button-primary" onClick={() => onStatusChange(lead, 'reviewed')}>
+            <button className="button-primary" onClick={() => onStatusChange(lead, 'drafted')}>
               <CheckCircle2 size={17} />
-              Mark reviewed
+              Draft ready
             </button>
           </div>
         </div>
@@ -1066,14 +1066,14 @@ function DraftPanel({
 
 function FollowUpsPage({ leads, onSelectLead, onStatusChange }: { leads: Lead[]; onSelectLead: (id: string) => void; onStatusChange: (lead: Lead, status: LeadStatus) => void }) {
   const contactedLeads = leads
-    .filter((lead) => lead.lastContactedAt || lead.contactHistory.length > 0 || lead.followUpDate || ['contacted', 'follow_up', 'replied', 'interested', 'meeting_booked', 'not_interested'].includes(lead.status))
+    .filter((lead) => lead.lastContactedAt || lead.contactHistory.length > 0 || lead.followUpDate || ['contacted', 'follow_up', 'replied', 'not_fit'].includes(lead.status))
     .sort((a, b) => (a.followUpDate || '9999').localeCompare(b.followUpDate || '9999'));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="border-b border-slate-100 pb-4">
         <h2 className="text-2xl font-semibold tracking-tight">Contact log</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">Track sent emails, replies and follow-up status.</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">Keep outreach status simple: sent, no reply, replied or not suitable.</p>
       </div>
       <div className="mt-4 space-y-2">
         {contactedLeads.length > 0 ? contactedLeads.map((lead) => (
@@ -1087,9 +1087,9 @@ function FollowUpsPage({ leads, onSelectLead, onStatusChange }: { leads: Lead[];
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-[220px_1fr_auto] md:items-center">
               <select className="input" value={lead.status} onChange={(event) => onStatusChange(lead, event.target.value as LeadStatus)}>
-                {statuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+                {contactLogStatuses.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
               </select>
-              <p className="text-sm text-slate-600">{lead.outcome || lead.nextAction || 'Waiting for reply or follow-up.'}</p>
+              <p className="text-sm text-slate-600">{lead.outcome || simpleStatusNote(lead.status)}</p>
               <button className="button-secondary" onClick={() => onSelectLead(lead.id)}>Open</button>
             </div>
             {lead.followUpDate && <p className="mt-3 text-xs font-semibold text-sky-700">Follow up {formatDate(lead.followUpDate)}</p>}
@@ -1152,7 +1152,15 @@ function pageDescription(page: AppPage) {
   if (page === 'finder') return 'Set the area, lead types and number of leads.';
   if (page === 'leads') return 'Review one lead card at a time before outreach.';
   if (page === 'drafts') return 'Review and edit draft emails before sending.';
-  return 'Track sent emails, replies and follow-ups.';
+  return 'Track sent emails, no replies and unsuitable leads.';
+}
+
+function simpleStatusNote(status: LeadStatus) {
+  if (status === 'contacted') return 'Email has been sent. Wait for a reply or mark no reply when follow-up is due.';
+  if (status === 'follow_up') return 'No reply yet. Follow up if the lead is still worth pursuing.';
+  if (status === 'replied') return 'They replied. Open the lead and record the next action.';
+  if (status === 'not_fit') return 'Not suitable. Stop outreach unless new information appears.';
+  return nextActionForStatus(status);
 }
 
 function StatusPill({ active }: { active: boolean }) {
@@ -1203,17 +1211,10 @@ function Alert({ tone, message }: { tone: 'danger' | 'info'; message: string }) 
 }
 
 function nextActionForStatus(status: LeadStatus): string {
-  if (status === 'new') return 'Review the organisation, find the right contact, then qualify or archive.';
-  if (status === 'researching') return 'Verify the decision maker, email address and referral relevance.';
-  if (status === 'qualified') return 'Generate a draft email for human review.';
-  if (status === 'drafted') return 'Review the draft and personalise anything that feels generic.';
-  if (status === 'reviewed') return 'Send the email outside the app, then mark as contacted.';
-  if (status === 'contacted') return 'Set a follow-up reminder after a few business days.';
-  if (status === 'follow_up') return 'Follow up with a short, useful note.';
-  if (status === 'replied') return 'Review the reply and decide whether they are interested, need follow-up, or are not a fit.';
-  if (status === 'interested') return 'Qualify the opportunity and suggest a meeting time.';
-  if (status === 'meeting_booked') return 'Prepare notes for the meeting and capture the referral opportunity.';
-  if (status === 'not_interested') return 'Stop outreach unless they ask to be contacted later.';
-  if (status === 'won') return 'Capture what worked so future outreach can reuse it.';
-  return 'Keep notes for why this lead is not a fit.';
+  if (status === 'qualified' || status === 'new' || status === 'researching') return 'Review the organisation, verify the best contact, then generate a draft.';
+  if (status === 'drafted' || status === 'reviewed') return 'Review the draft, send it manually, then mark Email sent.';
+  if (status === 'contacted') return 'Email sent. Wait for a reply or mark No reply when follow-up is due.';
+  if (status === 'follow_up') return 'No reply yet. Send one short follow-up if still worthwhile.';
+  if (status === 'replied' || status === 'interested' || status === 'meeting_booked') return 'They replied. Record the next action in notes.';
+  return 'Not suitable. Stop outreach to this organisation.';
 }

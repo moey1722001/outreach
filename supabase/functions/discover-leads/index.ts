@@ -77,7 +77,66 @@ function score(value: unknown, fallback = 60) {
   return Math.min(100, Math.max(0, Number(value) || fallback));
 }
 
-function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[], fallbackRadius: number | null) {
+function normaliseDomain(value: unknown) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .trim();
+}
+
+function extractEmails(text: string) {
+  return [...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])
+    .map((email) => email.toLowerCase())
+    .filter((email) => !/\.(png|jpg|jpeg|gif|webp|svg)$/i.test(email)))];
+}
+
+function extractPhones(text: string) {
+  return [...new Set((text.match(/(?:\+?61|0)[\d\s().-]{8,}\d/g) ?? [])
+    .map((phone) => phone.replace(/\s+/g, ' ').trim())
+    .filter((phone) => phone.replace(/\D/g, '').length >= 9))];
+}
+
+function matchingEvidence(lead: Record<string, unknown>, results: Array<Record<string, unknown>>) {
+  const domain = normaliseDomain(lead.website);
+  const organisationWords = String(lead.organisation ?? '').toLowerCase().split(/\s+/).filter((word) => word.length > 3);
+
+  return results.filter((result) => {
+    const url = String(result.url ?? '').toLowerCase();
+    const title = String(result.title ?? '').toLowerCase();
+    const content = String(result.content ?? '').toLowerCase();
+    if (domain && normaliseDomain(url) === domain) return true;
+    if (domain && url.includes(domain)) return true;
+    return organisationWords.length > 0 && organisationWords.some((word) => title.includes(word) || content.includes(word));
+  });
+}
+
+function publicContactFromEvidence(lead: Record<string, unknown>, results: Array<Record<string, unknown>>) {
+  const evidence = matchingEvidence(lead, results);
+  const text = evidence.map((result) => [
+    result.title,
+    result.url,
+    result.content,
+    result.raw_content,
+  ].filter(Boolean).join('\n')).join('\n\n');
+
+  return {
+    email: extractEmails(text)[0] ?? '',
+    phone: extractPhones(text)[0] ?? '',
+    foundContactEvidence: evidence.length > 0,
+  };
+}
+
+function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[], fallbackRadius: number | null, results: Array<Record<string, unknown>>) {
+  const publicContact = publicContactFromEvidence(lead, results);
+  const email = typeof lead.email === 'string' && lead.email.includes('@') ? lead.email : publicContact.email;
+  const phone = typeof lead.phone === 'string' && lead.phone.replace(/\D/g, '').length >= 9 ? lead.phone : publicContact.phone;
+  const notes = typeof lead.notes === 'string' ? lead.notes : '';
+  const contactNote = email
+    ? 'Public email found and needs human verification before sending.'
+    : 'No public email was found in the searched sources; verify the website/contact page manually before sending.';
+
   return {
     ...lead,
     category: closestCategory(lead.category, categories),
@@ -92,12 +151,13 @@ function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[],
     region: typeof lead.region === 'string' ? lead.region : '',
     contactName: typeof lead.contactName === 'string' ? lead.contactName : '',
     contactRole: typeof lead.contactRole === 'string' ? lead.contactRole : decisionMakerGuide[closestCategory(lead.category, categories)].split(': ')[1]?.split('.')[0] ?? '',
-    email: typeof lead.email === 'string' ? lead.email : '',
-    phone: typeof lead.phone === 'string' ? lead.phone : '',
+    email,
+    phone,
     businessNeeds: stringArray(lead.businessNeeds),
     servicesOffered: stringArray(lead.servicesOffered),
     concerns: stringArray(lead.concerns),
     needs: stringArray(lead.needs),
+    notes: [notes, contactNote].filter(Boolean).join(' '),
     lastContactedAt: typeof lead.lastContactedAt === 'string' ? lead.lastContactedAt : null,
   };
 }
@@ -203,6 +263,8 @@ serve(async (req) => {
     const queries = [
       `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia contact phone email`,
       `${categories.join(' OR ')} ${area} Practice Manager Care Manager Support Coordination Manager Intake Admissions phone email website LinkedIn`,
+      `${categories.join(' OR ')} ${area} "contact us" email phone referrals intake`,
+      `${categories.join(' OR ')} ${area} "@gmail.com" OR "@outlook.com" OR "@hotmail.com" OR "@org.au" OR "@com.au"`,
       `site:linkedin.com/company (${categories.join(' OR ')}) ${area} healthcare aged care NDIS`,
       `site:linkedin.com/in (${categories.join(' OR ')}) ${area} Practice Manager Care Manager Support Coordinator Director`,
     ];
@@ -269,7 +331,14 @@ For each candidate, explain:
 - public phone/email/website/LinkedIn evidence found, if available
 - services offered, likely needs, concerns, outreach angle, and priority score
 
-Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need in-home nursing, care coordination, post-discharge support, medication oversight, wound care, complex disability support, or family communication.`,
+Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need in-home nursing, care coordination, post-discharge support, medication oversight, wound care, complex disability support, or family communication.
+
+Email/phone rules:
+- Search the supplied website/contact/search snippets carefully for a public email and phone number.
+- Prefer direct organisation emails from the organisation's own website or contact page.
+- Generic public inboxes like admin@, info@, referrals@, intake@ or hello@ are acceptable if public.
+- Never invent an email. If no email is public, leave email empty and explain that it needs manual verification in notes.
+- Never use a personal LinkedIn profile as proof of a private email address.`,
           },
           {
             role: 'user',
@@ -355,7 +424,7 @@ Prioritise businesses with a direct pathway to referrals or client introductions
       return json({ error: 'Search completed, but no suitable leads were identified. Try a broader area or different lead types.' }, 404);
     }
 
-    return json({ leads: parsed.leads.slice(0, requestedCount).map((lead: Record<string, unknown>) => sanitiseLead(lead, categories, radiusKm)) });
+    return json({ leads: parsed.leads.slice(0, requestedCount).map((lead: Record<string, unknown>) => sanitiseLead(lead, categories, radiusKm, results)) });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Unknown lead search error.' }, 500);
   }
