@@ -218,7 +218,7 @@ export default function App() {
       await refresh(savedLeads[0]?.id);
       setPage('leads');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lead discovery failed.');
+      setError(err instanceof Error ? err.message : 'Lead search failed. Check Supabase Edge Function secrets and try again.');
     } finally {
       setBusy('');
     }

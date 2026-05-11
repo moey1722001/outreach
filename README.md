@@ -12,7 +12,7 @@ npm run outreach:dev
 
 The app runs on `http://localhost:5174`.
 
-Without Outreach Supabase variables it runs in local demo mode using browser storage.
+Lead Finder requires Outreach Supabase variables and deployed Edge Functions. It does not return fake/demo lead search results.
 
 ## Environment
 
@@ -31,7 +31,7 @@ OUTREACH_OPENAI_MODEL=gpt-4.1-mini
 TAVILY_API_KEY=...
 ```
 
-`TAVILY_API_KEY` is optional. If it is not present, discovery returns placeholders for human verification.
+`TAVILY_API_KEY` and `OPENAI_API_KEY` are required for Lead Finder. If either is missing, the app shows a clear configuration error instead of returning placeholder leads.
 
 ## Supabase
 
@@ -45,6 +45,14 @@ supabase link --project-ref YOUR_OUTREACH_PROJECT_REF
 supabase db push
 supabase functions deploy discover-leads
 supabase functions deploy generate-email
+```
+
+Set required Edge Function secrets:
+
+```bash
+supabase secrets set TAVILY_API_KEY=...
+supabase secrets set OPENAI_API_KEY=...
+supabase secrets set OUTREACH_OPENAI_MODEL=gpt-4.1-mini
 ```
 
 Auth signups are disabled in `outreach/supabase/config.toml`. Invite only the two internal users in the Outreach Supabase dashboard.

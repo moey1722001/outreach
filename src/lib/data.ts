@@ -368,10 +368,14 @@ export async function markLatestEmailSent(lead: Lead, contactedBy: string, sentA
 }
 
 export async function discoverLeads(brief: SearchBrief): Promise<Lead[]> {
-  if (!supabase) return createLocalDiscoveries(brief);
+  if (!supabase) {
+    throw new Error('Lead Finder requires the Outreach Supabase project to be configured. Set VITE_OUTREACH_SUPABASE_URL and VITE_OUTREACH_SUPABASE_ANON_KEY.');
+  }
 
   const { data, error } = await supabase.functions.invoke('discover-leads', { body: brief });
-  if (error) throw error;
+  if (error) throw new Error(`Lead search failed: ${error.message}`);
+  if (data?.error) throw new Error(data.error);
+
   return (data?.leads ?? []).map((lead: Partial<Lead> & Pick<Lead, 'organisation' | 'category'>) => hydrateLead({
     ...lead,
     id: lead.id || crypto.randomUUID(),
@@ -424,47 +428,6 @@ async function saveEmailDraft(lead: Lead, draft: DraftEmail, tone: OutreachTone,
     created_by: record.createdBy || null,
   });
   if (error) throw error;
-}
-
-function createLocalDiscoveries(brief: SearchBrief): Lead[] {
-  const timestamp = now();
-  const place = [brief.suburb, brief.postcode, brief.region].filter(Boolean).join(' ') || brief.location || 'Local';
-
-  return Array.from({ length: Math.max(1, brief.leadCount || 5) }, (_, index) => {
-    const category = brief.categories[index % brief.categories.length];
-    const lead = hydrateLead({
-      id: crypto.randomUUID(),
-      organisation: `${place} ${category.replace(' provider', '').replace(' clinic', '')} Network`,
-      category,
-      website: '',
-      location: place,
-      suburb: brief.suburb,
-      postcode: brief.postcode,
-      region: brief.region,
-      radiusKm: brief.radiusKm,
-      contactName: '',
-      contactRole: category === 'GP clinic' ? 'Practice Manager' : 'Partnerships or Referrals Lead',
-      email: '',
-      phone: '',
-      status: 'researching',
-      likelihood: 0,
-      fitSummary: 'AI research placeholder. Connect Supabase Edge Functions with a search API to enrich this lead.',
-      suitabilitySummary: 'Autonomous research could not verify this candidate yet. Treat as a placeholder until the search function is connected.',
-      businessNeeds: ['Referral pathway', 'Clinical support', 'Responsive follow-up'],
-      servicesOffered: ['Public services not verified'],
-      concerns: ['Live search provider is not configured. Human verification required.'],
-      outreachAngle: 'Verify fit before drafting an email.',
-      researchConfidence: 25,
-      needs: ['Referral pathway', 'Clinical support', 'Responsive follow-up'],
-      source: 'Local discovery draft',
-      nextAction: 'Verify website, decision maker, and email before outreach.',
-      notes: brief.notes,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-    lead.likelihood = scoreLead(lead) - index * 4;
-    return lead;
-  });
 }
 
 function createLocalEmail(lead: Lead, tone: OutreachTone): DraftEmail {

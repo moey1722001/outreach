@@ -5,31 +5,90 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+type LeadCategory =
+  | 'NDIS support coordinator'
+  | 'Home Care Package provider'
+  | 'Retirement village'
+  | 'Aged care provider'
+  | 'GP clinic'
+  | 'Allied health provider';
+
+interface SearchRequest {
+  location?: string;
+  suburb?: string;
+  postcode?: string;
+  region?: string;
+  radiusKm?: number | null;
+  leadCount?: number;
+  categories?: LeadCategory[];
+  notes?: string;
+}
+
+function json(body: unknown, status = 200) {
+  return Response.json(body, { status, headers: corsHeaders });
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { location, suburb, postcode, region, radiusKm, leadCount = 10, categories, notes } = await req.json();
+    const body = await req.json() as SearchRequest;
+    const {
+      location = '',
+      suburb = '',
+      postcode = '',
+      region = '',
+      radiusKm = 10,
+      leadCount = 10,
+      categories = [],
+      notes = '',
+    } = body;
+
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     const searchKey = Deno.env.get('TAVILY_API_KEY');
 
-    let searchResults = '';
-    if (searchKey) {
-      const searchResponse = await fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: searchKey,
-          query: `${categories.join(' OR ')} near ${suburb ?? ''} ${postcode ?? ''} ${region ?? location ?? ''} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`,
-          search_depth: 'advanced',
-          max_results: Math.min(20, Math.max(leadCount * 2, 10)),
-        }),
-      });
-      if (searchResponse.ok) searchResults = JSON.stringify(await searchResponse.json());
+    if (!searchKey) {
+      return json({ error: 'Lead search is not configured: missing TAVILY_API_KEY Supabase Edge Function secret.' }, 500);
     }
 
     if (!openAiKey) {
-      return Response.json({ leads: fallbackLeads({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes }) }, { headers: corsHeaders });
+      return json({ error: 'Lead analysis is not configured: missing OPENAI_API_KEY Supabase Edge Function secret.' }, 500);
+    }
+
+    if (categories.length === 0) {
+      return json({ error: 'Choose at least one lead type before searching.' }, 400);
+    }
+
+    const area = [suburb, postcode, region || location].filter(Boolean).join(' ');
+    if (!area) {
+      return json({ error: 'Enter a suburb, postcode or region before searching.' }, 400);
+    }
+
+    const requestedCount = Math.min(20, Math.max(1, leadCount));
+    const query = `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`;
+
+    const searchResponse = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: searchKey,
+        query,
+        search_depth: 'advanced',
+        include_answer: false,
+        include_raw_content: false,
+        max_results: Math.min(20, Math.max(requestedCount * 2, 10)),
+      }),
+    });
+
+    if (!searchResponse.ok) {
+      return json({ error: `Search provider failed (${searchResponse.status}): ${await searchResponse.text()}` }, 502);
+    }
+
+    const searchPayload = await searchResponse.json();
+    const results = Array.isArray(searchPayload.results) ? searchPayload.results : [];
+
+    if (results.length === 0) {
+      return json({ error: `No search results found for ${area}. Try a broader radius or fewer lead types.` }, 404);
     }
 
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -43,11 +102,21 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: `You are an autonomous healthcare outreach research assistant for Paracare. Return up to ${leadCount} suitable Australian outreach leads from supplied search results. Respect the requested suburb, postcode, region and radius. Gather only public facts. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, list services offered, analyse likely business needs, explain whether Paracare is a good fit, identify concerns, choose the best outreach angle, and provide a priority score. Only return candidates that are plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.`,
+            content: `You are an autonomous healthcare outreach research assistant for Paracare. Return up to ${requestedCount} suitable Australian outreach leads from supplied web search results. Use only public facts present in the search results. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, list services offered, likely business needs, why Paracare is a good fit, concerns, best outreach angle, and a priority score. Only return organisations plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.`,
           },
           {
             role: 'user',
-            content: JSON.stringify({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes, searchResults }),
+            content: JSON.stringify({
+              searchArea: { location, suburb, postcode, region, radiusKm },
+              requestedCount,
+              categories,
+              outreachInstructions: notes,
+              searchResults: results.map((result: Record<string, unknown>) => ({
+                title: result.title,
+                url: result.url,
+                content: result.content,
+              })),
+            }),
           },
         ],
         text: {
@@ -102,47 +171,20 @@ serve(async (req) => {
       }),
     });
 
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+      return json({ error: `Lead analysis failed (${response.status}): ${await response.text()}` }, 502);
+    }
+
     const data = await response.json();
     const text = data.output_text ?? data.output?.[0]?.content?.[0]?.text;
-    return Response.json(JSON.parse(text), { headers: corsHeaders });
+    const parsed = JSON.parse(text);
+
+    if (!Array.isArray(parsed.leads) || parsed.leads.length === 0) {
+      return json({ error: 'Search completed, but no suitable leads were identified. Try a broader area or different lead types.' }, 404);
+    }
+
+    return json({ leads: parsed.leads.slice(0, requestedCount) });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500, headers: corsHeaders });
+    return json({ error: error instanceof Error ? error.message : 'Unknown lead search error.' }, 500);
   }
 });
-
-function fallbackLeads({ location, suburb, postcode, region, radiusKm, leadCount, categories, notes }: { location: string; suburb: string; postcode: string; region: string; radiusKm: number | null; leadCount: number; categories: string[]; notes: string }) {
-  const area = [suburb, postcode, region].filter(Boolean).join(' ') || location;
-
-  return Array.from({ length: Math.max(1, leadCount || 5) }, (_, index) => {
-    const category = categories[index % categories.length];
-    return ({
-    organisation: `${area || 'Local'} ${category} candidate`,
-    category,
-    website: '',
-    location: area,
-    suburb: suburb ?? '',
-    postcode: postcode ?? '',
-    region: region ?? '',
-    radiusKm: radiusKm ?? null,
-    contactName: '',
-    contactRole: category === 'GP clinic' ? 'Practice Manager' : 'Referrals or Partnerships Lead',
-    email: '',
-    phone: '',
-    status: 'researching',
-    likelihood: 72 - index * 5,
-    fitSummary: 'Search provider not configured. Verify this placeholder with public research before outreach.',
-    suitabilitySummary: 'Autonomous research could not verify this candidate yet because live search/AI provider secrets are not fully configured.',
-    businessNeeds: ['Referral pathway', 'Clinical support', 'Care coordination'],
-    servicesOffered: ['Public services not verified'],
-    concerns: ['Live search provider is not configured. Human verification required.'],
-    outreachAngle: 'Verify fit and public contact details before generating a human-reviewed email.',
-    researchConfidence: 25,
-    needs: ['Referral pathway', 'Clinical support', 'Care coordination'],
-    source: 'Fallback discovery',
-    nextAction: 'Verify organisation, website, decision maker and contact email.',
-    notes,
-    lastContactedAt: null,
-  });
-  });
-}
