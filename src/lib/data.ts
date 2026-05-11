@@ -373,7 +373,7 @@ export async function discoverLeads(brief: SearchBrief): Promise<Lead[]> {
   }
 
   const { data, error } = await supabase.functions.invoke('discover-leads', { body: brief });
-  if (error) throw new Error(`Lead search failed: ${error.message}`);
+  if (error) throw new Error(await functionErrorMessage(error, 'Lead search failed.'));
   if (data?.error) throw new Error(data.error);
 
   return (data?.leads ?? []).map((lead: Partial<Lead> & Pick<Lead, 'organisation' | 'category'>) => hydrateLead({
@@ -395,8 +395,29 @@ export async function generateEmail(lead: Lead, tone: OutreachTone, createdBy = 
 
 async function invokeGenerateEmail(lead: Lead, tone: OutreachTone): Promise<DraftEmail> {
   const { data, error } = await supabase!.functions.invoke('generate-email', { body: { lead, tone } });
-  if (error) throw error;
+  if (error) throw new Error(await functionErrorMessage(error, 'Email drafting failed.'));
+  if (data?.error) throw new Error(data.error);
   return data as DraftEmail;
+}
+
+async function functionErrorMessage(error: unknown, fallback: string) {
+  const context = (error as { context?: unknown })?.context;
+
+  if (context instanceof Response) {
+    try {
+      const payload = await context.clone().json();
+      if (typeof payload?.error === 'string') return payload.error;
+    } catch {
+      try {
+        const text = await context.clone().text();
+        if (text) return text;
+      } catch {
+        // Fall through to the Supabase client message below.
+      }
+    }
+  }
+
+  return error instanceof Error ? `${fallback} ${error.message}` : fallback;
 }
 
 async function saveEmailDraft(lead: Lead, draft: DraftEmail, tone: OutreachTone, createdBy: string) {

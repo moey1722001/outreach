@@ -28,6 +28,37 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: corsHeaders });
 }
 
+async function providerError(response: Response, provider: 'Search provider' | 'Lead analysis') {
+  const body = await response.text();
+  const lowerBody = body.toLowerCase();
+
+  if (lowerBody.includes('insufficient_quota') || lowerBody.includes('quota')) {
+    return `${provider} failed: OpenAI quota has been exceeded. Check the OpenAI project billing/credits for the API key saved in Supabase.`;
+  }
+
+  if (lowerBody.includes('invalid_api_key') || response.status === 401) {
+    return `${provider} failed: the configured API key was rejected. Check the secret value saved in Supabase.`;
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    const message = parsed?.error?.message ?? parsed?.message ?? body;
+    const code = parsed?.error?.code ?? parsed?.code;
+
+    if (code === 'insufficient_quota' || String(message).toLowerCase().includes('quota')) {
+      return `${provider} failed: OpenAI quota has been exceeded. Check the OpenAI project billing/credits for the API key saved in Supabase.`;
+    }
+
+    if (code === 'invalid_api_key' || response.status === 401) {
+      return `${provider} failed: the configured API key was rejected. Check the secret value saved in Supabase.`;
+    }
+
+    return `${provider} failed (${response.status}): ${message}`;
+  } catch {
+    return `${provider} failed (${response.status}): ${body}`;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -81,7 +112,7 @@ serve(async (req) => {
     });
 
     if (!searchResponse.ok) {
-      return json({ error: `Search provider failed (${searchResponse.status}): ${await searchResponse.text()}` }, 502);
+      return json({ error: await providerError(searchResponse, 'Search provider') }, 502);
     }
 
     const searchPayload = await searchResponse.json();
@@ -172,7 +203,7 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      return json({ error: `Lead analysis failed (${response.status}): ${await response.text()}` }, 502);
+      return json({ error: await providerError(response, 'Lead analysis') }, 502);
     }
 
     const data = await response.json();
