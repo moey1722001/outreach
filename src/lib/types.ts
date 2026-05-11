@@ -22,6 +22,7 @@ export type LeadStatus =
   | 'not_fit';
 
 export type OutreachTone = 'warm' | 'clinical' | 'concise';
+export type ModelMode = 'save_tokens' | 'launch_quality';
 
 export type ContactMethod = 'email_sent' | 'phone_call' | 'meeting' | 'manual_note';
 
@@ -103,6 +104,7 @@ export interface SearchBrief {
   leadCount: number;
   categories: LeadCategory[];
   notes: string;
+  modelMode: ModelMode;
 }
 
 export type LeadFormInput = Omit<Lead, 'id' | 'createdAt' | 'updatedAt' | 'likelihood'> & {

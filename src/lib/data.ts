@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { scoreLead } from './scoring';
-import type { ContactEvent, ContactMethod, DraftEmail, EmailRecord, Lead, LeadFormInput, OutreachTone, SearchBrief } from './types';
+import type { ContactEvent, ContactMethod, DraftEmail, EmailRecord, Lead, LeadFormInput, ModelMode, OutreachTone, SearchBrief } from './types';
 
 const STORAGE_KEY = 'paracare-outreach-leads';
 
@@ -384,17 +384,17 @@ export async function discoverLeads(brief: SearchBrief): Promise<Lead[]> {
   }));
 }
 
-export async function generateEmail(lead: Lead, tone: OutreachTone, createdBy = ''): Promise<DraftEmail> {
+export async function generateEmail(lead: Lead, tone: OutreachTone, createdBy = '', modelMode: ModelMode = 'save_tokens'): Promise<DraftEmail> {
   const draft = !supabase
     ? createLocalEmail(lead, tone)
-    : await invokeGenerateEmail(lead, tone);
+    : await invokeGenerateEmail(lead, tone, modelMode);
 
   await saveEmailDraft(lead, draft, tone, createdBy);
   return draft;
 }
 
-async function invokeGenerateEmail(lead: Lead, tone: OutreachTone): Promise<DraftEmail> {
-  const { data, error } = await supabase!.functions.invoke('generate-email', { body: { lead, tone } });
+async function invokeGenerateEmail(lead: Lead, tone: OutreachTone, modelMode: ModelMode): Promise<DraftEmail> {
+  const { data, error } = await supabase!.functions.invoke('generate-email', { body: { lead, tone, modelMode } });
   if (error) throw new Error(await functionErrorMessage(error, 'Email drafting failed.'));
   if (data?.error) throw new Error(data.error);
   return data as DraftEmail;

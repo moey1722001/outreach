@@ -29,11 +29,12 @@ Edge Function secrets for AI/search:
 
 ```bash
 OPENAI_API_KEY=...
+OUTREACH_OPENAI_TEST_MODEL=gpt-4.1-nano
 OUTREACH_OPENAI_MODEL=gpt-4.1-mini
 TAVILY_API_KEY=...
 ```
 
-`TAVILY_API_KEY` and `OPENAI_API_KEY` are required for Lead Finder. If either is missing, the app shows a clear configuration error instead of returning placeholder leads.
+`TAVILY_API_KEY` and `OPENAI_API_KEY` are required for Lead Finder. If either is missing, the app shows a clear configuration error instead of returning placeholder leads. The in-app AI model mode defaults to `Save tokens`, which uses `OUTREACH_OPENAI_TEST_MODEL` or `gpt-4.1-nano`. Switch to `Launch quality` when you want to use `OUTREACH_OPENAI_MODEL` for final outreach.
 
 ## Supabase
 
@@ -54,6 +55,7 @@ Set required Edge Function secrets:
 ```bash
 supabase secrets set TAVILY_API_KEY=...
 supabase secrets set OPENAI_API_KEY=...
+supabase secrets set OUTREACH_OPENAI_TEST_MODEL=gpt-4.1-nano
 supabase secrets set OUTREACH_OPENAI_MODEL=gpt-4.1-mini
 ```
 

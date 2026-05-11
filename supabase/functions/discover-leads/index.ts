@@ -22,6 +22,7 @@ interface SearchRequest {
   leadCount?: number;
   categories?: LeadCategory[];
   notes?: string;
+  modelMode?: 'save_tokens' | 'launch_quality';
 }
 
 function json(body: unknown, status = 200) {
@@ -59,6 +60,31 @@ async function providerError(response: Response, provider: 'Search provider' | '
   }
 }
 
+function outputText(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const direct = (payload as { output_text?: unknown }).output_text;
+  if (typeof direct === 'string' && direct.trim()) return direct;
+
+  const stack: unknown[] = [(payload as { output?: unknown }).output];
+  while (stack.length > 0) {
+    const value = stack.shift();
+    if (!value) continue;
+    if (typeof value === 'string' && value.trim()) return value;
+    if (Array.isArray(value)) {
+      stack.push(...value);
+      continue;
+    }
+    if (typeof value === 'object') {
+      const item = value as Record<string, unknown>;
+      if (typeof item.text === 'string' && item.text.trim()) return item.text;
+      if (typeof item.content === 'string' && item.content.trim()) return item.content;
+      stack.push(item.content, item.message, item.output);
+    }
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -73,6 +99,7 @@ serve(async (req) => {
       leadCount = 10,
       categories = [],
       notes = '',
+      modelMode = 'save_tokens',
     } = body;
 
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
@@ -96,6 +123,9 @@ serve(async (req) => {
     }
 
     const requestedCount = Math.min(20, Math.max(1, leadCount));
+    const model = modelMode === 'save_tokens'
+      ? Deno.env.get('OUTREACH_OPENAI_TEST_MODEL') ?? 'gpt-4.1-nano'
+      : Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini';
     const query = `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`;
 
     const searchResponse = await fetch('https://api.tavily.com/search', {
@@ -129,7 +159,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini',
+        model,
         input: [
           {
             role: 'system',
@@ -207,7 +237,10 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const text = data.output_text ?? data.output?.[0]?.content?.[0]?.text;
+    const text = outputText(data);
+    if (!text) {
+      return json({ error: 'Lead analysis failed: the AI model returned no structured text. Try Launch quality mode or a smaller lead count.' }, 502);
+    }
     const parsed = JSON.parse(text);
 
     if (!Array.isArray(parsed.leads) || parsed.leads.length === 0) {

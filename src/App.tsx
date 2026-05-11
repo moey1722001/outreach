@@ -24,7 +24,7 @@ import { discoverLeads, generateEmail, listLeads, markLatestEmailSent, saveLead,
 import { findDuplicateMatches, hasPriorOutreach } from './lib/duplicates';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
-import type { DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, OutreachTone, SearchBrief } from './lib/types';
+import type { DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, ModelMode, OutreachTone, SearchBrief } from './lib/types';
 
 type AppPage = 'finder' | 'leads' | 'drafts' | 'followups';
 
@@ -108,6 +108,7 @@ export default function App() {
     leadCount: 10,
     categories: ['NDIS support coordinator', 'Home Care Package provider', 'GP clinic'],
     notes: 'Prioritise organisations likely to refer clients who need in-home nursing and responsive escalation.',
+    modelMode: 'save_tokens',
   });
   const [draft, setDraft] = useState<DraftEmail | null>(null);
   const [tone, setTone] = useState<OutreachTone>('warm');
@@ -212,7 +213,7 @@ export default function App() {
         const savedLead = await saveLead({ ...lead, status: 'drafted', likelihood: lead.likelihood }, lead.id);
         duplicatePool.push(savedLead);
         savedLeads.push(savedLead);
-        await generateEmail(savedLead, tone, session?.user.email ?? 'Autonomous research');
+        await generateEmail(savedLead, tone, session?.user.email ?? 'Autonomous research', brief.modelMode);
       }
 
       await refresh(savedLeads[0]?.id);
@@ -254,7 +255,7 @@ export default function App() {
     setBusy('Generating email');
     setError('');
     try {
-      const nextDraft = await generateEmail(selectedLead, tone, session?.user.email ?? 'Local user');
+      const nextDraft = await generateEmail(selectedLead, tone, session?.user.email ?? 'Local user', brief.modelMode);
       setDraft(nextDraft);
       const updated = await updateLeadStatus(selectedLead, selectedLead.status === 'qualified' || selectedLead.status === 'new' ? 'drafted' : selectedLead.status);
       await refresh(updated.id);
@@ -676,6 +677,27 @@ function DiscoverPanel({
             {[5, 10, 15, 20].map((count) => <option key={count} value={count}>{count}</option>)}
           </select>
         </label>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-sky-100 bg-sky-50 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <span className="label">AI model mode</span>
+            <p className="text-sm leading-6 text-slate-600">
+              {brief.modelMode === 'save_tokens'
+                ? 'Testing mode uses the cheapest model to reduce API costs.'
+                : 'Launch mode uses the stronger outreach model for final research and drafts.'}
+            </p>
+          </div>
+          <select
+            className="input sm:max-w-56"
+            value={brief.modelMode}
+            onChange={(event) => onBriefChange({ ...brief, modelMode: event.target.value as ModelMode })}
+          >
+            <option value="save_tokens">Save tokens</option>
+            <option value="launch_quality">Launch quality</option>
+          </select>
+        </div>
       </div>
 
       <div className="mt-4">
