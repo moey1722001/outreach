@@ -246,7 +246,7 @@ export default function App() {
       await refresh(savedLeads[0]?.id);
       setPage('leads');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lead search failed. Check Supabase Edge Function secrets and try again.');
+      setError(errorMessage(err, 'Lead search failed. Check Supabase Edge Function secrets and try again.'));
     } finally {
       setBusy('');
     }
@@ -512,6 +512,13 @@ function authErrorMessage(error: unknown) {
   }
 
   return message || 'Could not sign in.';
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
+  if (typeof error === 'string') return error;
+  return fallback;
 }
 
 const navItems: { page: AppPage; label: string; icon: React.ReactNode }[] = [

@@ -13,6 +13,15 @@ type LeadCategory =
   | 'GP clinic'
   | 'Allied health provider';
 
+const leadCategories: LeadCategory[] = [
+  'NDIS support coordinator',
+  'Home Care Package provider',
+  'Retirement village',
+  'Aged care provider',
+  'GP clinic',
+  'Allied health provider',
+];
+
 const decisionMakerGuide: Record<LeadCategory, string> = {
   'NDIS support coordinator': 'Primary decision makers: Support Coordination Manager, Specialist Support Coordinator, Support Coordination Team Lead, Director/Founder of a support coordination provider. Why: they influence participant referrals, choose responsive clinical partners, and coordinate complex in-home support needs.',
   'Home Care Package provider': 'Primary decision makers: Home Care Package Manager, Care Manager, Clinical Care Manager, Intake/Admissions Manager, Operations Manager. Why: they manage package clients, approve external nursing/allied partners, and need reliable reporting, escalation and visit coordination.',
@@ -40,6 +49,57 @@ function json(body: unknown, status = 200) {
 
 function targetDecisionMakers(categories: LeadCategory[]) {
   return categories.map((category) => `${category}: ${decisionMakerGuide[category]}`).join('\n');
+}
+
+function isLeadCategory(value: unknown): value is LeadCategory {
+  return typeof value === 'string' && leadCategories.includes(value as LeadCategory);
+}
+
+function closestCategory(value: unknown, categories: LeadCategory[]): LeadCategory {
+  if (isLeadCategory(value) && categories.includes(value)) return value;
+  const text = String(value ?? '').toLowerCase();
+  const matched = categories.find((category) => text.includes(category.toLowerCase()));
+  if (matched) return matched;
+  if (text.includes('ndis') || text.includes('support coordination')) return categories.includes('NDIS support coordinator') ? 'NDIS support coordinator' : categories[0];
+  if (text.includes('home care') || text.includes('hcp')) return categories.includes('Home Care Package provider') ? 'Home Care Package provider' : categories[0];
+  if (text.includes('retirement')) return categories.includes('Retirement village') ? 'Retirement village' : categories[0];
+  if (text.includes('aged')) return categories.includes('Aged care provider') ? 'Aged care provider' : categories[0];
+  if (text.includes('gp') || text.includes('clinic')) return categories.includes('GP clinic') ? 'GP clinic' : categories[0];
+  if (text.includes('allied')) return categories.includes('Allied health provider') ? 'Allied health provider' : categories[0];
+  return categories[0];
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function score(value: unknown, fallback = 60) {
+  return Math.min(100, Math.max(0, Number(value) || fallback));
+}
+
+function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[], fallbackRadius: number | null) {
+  return {
+    ...lead,
+    category: closestCategory(lead.category, categories),
+    status: 'qualified',
+    likelihood: score(lead.likelihood),
+    researchConfidence: score(lead.researchConfidence, score(lead.likelihood)),
+    radiusKm: typeof lead.radiusKm === 'number' ? lead.radiusKm : fallbackRadius,
+    website: typeof lead.website === 'string' ? lead.website : '',
+    location: typeof lead.location === 'string' ? lead.location : '',
+    suburb: typeof lead.suburb === 'string' ? lead.suburb : '',
+    postcode: typeof lead.postcode === 'string' ? lead.postcode : '',
+    region: typeof lead.region === 'string' ? lead.region : '',
+    contactName: typeof lead.contactName === 'string' ? lead.contactName : '',
+    contactRole: typeof lead.contactRole === 'string' ? lead.contactRole : decisionMakerGuide[closestCategory(lead.category, categories)].split(': ')[1]?.split('.')[0] ?? '',
+    email: typeof lead.email === 'string' ? lead.email : '',
+    phone: typeof lead.phone === 'string' ? lead.phone : '',
+    businessNeeds: stringArray(lead.businessNeeds),
+    servicesOffered: stringArray(lead.servicesOffered),
+    concerns: stringArray(lead.concerns),
+    needs: stringArray(lead.needs),
+    lastContactedAt: typeof lead.lastContactedAt === 'string' ? lead.lastContactedAt : null,
+  };
 }
 
 async function providerError(response: Response, provider: 'Search provider' | 'Lead analysis') {
@@ -110,10 +170,11 @@ serve(async (req) => {
       region = '',
       radiusKm = 10,
       leadCount = 10,
-      categories = [],
+      categories: requestedCategories = [],
       notes = '',
       modelMode = 'save_tokens',
     } = body;
+    const categories = requestedCategories.filter(isLeadCategory);
 
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     const searchKey = Deno.env.get('TAVILY_API_KEY');
@@ -195,6 +256,9 @@ serve(async (req) => {
 
 Use only public facts present in the supplied results. Do not invent email addresses, phone numbers, websites, LinkedIn profiles or personal names. If a public source does not show a named person, leave contactName empty and recommend the most likely role in contactRole.
 
+The category field must be exactly one of: ${categories.join(', ')}.
+The status field must always be exactly "qualified".
+
 Decision-maker guide:
 ${targetDecisionMakers(categories)}
 
@@ -241,7 +305,7 @@ Prioritise businesses with a direct pathway to referrals or client introductions
                     required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'servicesOffered', 'concerns', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
                     properties: {
                       organisation: { type: 'string' },
-                      category: { type: 'string' },
+                      category: { type: 'string', enum: categories },
                       website: { type: 'string' },
                       location: { type: 'string' },
                       suburb: { type: 'string' },
@@ -252,7 +316,7 @@ Prioritise businesses with a direct pathway to referrals or client introductions
                       contactRole: { type: 'string' },
                       email: { type: 'string' },
                       phone: { type: 'string' },
-                      status: { type: 'string' },
+                      status: { type: 'string', enum: ['qualified'] },
                       likelihood: { type: 'number' },
                       fitSummary: { type: 'string' },
                       suitabilitySummary: { type: 'string' },
@@ -291,7 +355,7 @@ Prioritise businesses with a direct pathway to referrals or client introductions
       return json({ error: 'Search completed, but no suitable leads were identified. Try a broader area or different lead types.' }, 404);
     }
 
-    return json({ leads: parsed.leads.slice(0, requestedCount) });
+    return json({ leads: parsed.leads.slice(0, requestedCount).map((lead: Record<string, unknown>) => sanitiseLead(lead, categories, radiusKm)) });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Unknown lead search error.' }, 500);
   }
