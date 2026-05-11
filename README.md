@@ -36,6 +36,8 @@ TAVILY_API_KEY=...
 
 `TAVILY_API_KEY` and `OPENAI_API_KEY` are required for Lead Finder. If either is missing, the app shows a clear configuration error instead of returning placeholder leads. The in-app AI model mode defaults to `Save tokens`, which uses `OUTREACH_OPENAI_TEST_MODEL` or `gpt-4.1-nano`. Switch to `Launch quality` when you want to use `OUTREACH_OPENAI_MODEL` for final outreach.
 
+Lead Finder searches public websites and public search results, including LinkedIn result snippets where available. It prioritises the likely decision maker for each pathway, such as support coordination managers for NDIS leads and care/home-care managers for Home Care Package leads, and keeps human review before any email is sent.
+
 ## Supabase
 
 The Outreach Supabase project lives under `outreach/supabase`, separate from the clinical app's root `supabase` folder.

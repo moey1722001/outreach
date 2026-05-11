@@ -61,6 +61,37 @@ function outputText(payload: unknown): string | null {
   return null;
 }
 
+function cleanDraft(draft: { subject?: unknown; body?: unknown }) {
+  let subject = String(draft.subject ?? '').trim();
+  let body = String(draft.body ?? '').trim();
+
+  subject = subject
+    .replace(/\btrusted provider\b/gi, 'clinical support')
+    .replace(/\bleading provider\b/gi, 'clinical support')
+    .replace(/\s+/g, ' ')
+    .slice(0, 90);
+
+  body = body
+    .replace(/^\s*(i hope (this|my) (email|message) finds you well\.?\s*)/gim, '')
+    .replace(/\bi hope (this|my) (email|message) finds you well\.?\s*/gi, '')
+    .replace(/\btrusted provider\b/gi, 'in-home clinical support team')
+    .replace(/\bleading provider\b/gi, 'in-home clinical support team')
+    .replace(/\bbecome a dependable partner\b/gi, 'be useful for future client referrals')
+    .replace(/\bLooking forward to your response\.?/gi, 'Thanks for considering it.')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (!/kind regards|warm regards|thanks/i.test(body)) {
+    body = `${body}\n\nKind regards,\nParacare`;
+  }
+
+  if (!/paracare/i.test(body)) {
+    body = `${body}\n\nKind regards,\nParacare`;
+  }
+
+  return { subject, body };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -87,7 +118,25 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: 'You write concise, ethical B2B outreach emails for an Australian in-home healthcare provider. Use the researched services, likely business needs, suitability summary, concerns and outreach angle. Never claim a partnership, never imply endorsement, never overstate public research, and keep the draft ready for human review before sending.',
+            content: `You write ethical, high-response B2B outreach emails for Paracare, an Australian in-home clinical care provider.
+
+Write every email as a fresh, human-reviewed first email. It must not sound like a generic cold email.
+
+Rules:
+- Use the organisation's actual services, likely client group, contact role, public facts, suitability summary, concerns and outreach angle.
+- If a named person exists, write to that person. Otherwise write naturally to the role/team.
+- Lead with a specific reason for contacting them, not a generic introduction.
+- Keep it short: 120-170 words unless concise mode is requested.
+- Use plain language, clinical credibility, and a calm helpful tone.
+- Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, or post-discharge/complex-care support.
+- Ask for a low-friction next step, usually a brief call or the right person to speak with.
+- Avoid hype, pressure, fake familiarity, exaggerated claims, spammy subject lines, and "I hope this email finds you well".
+- Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "become a dependable partner", "looking forward to your response".
+- Subject line must be plain, specific and under 8 words.
+- Never claim an existing partnership, endorsement or referral relationship.
+- If evidence is weak, acknowledge it gently and ask to be pointed to the right person.
+
+Marketing basis: favour buying-group relevance over over-personalising to one individual; help the recipient quickly understand why this matters to their organisation and clients.`,
           },
           {
             role: 'user',
@@ -118,7 +167,7 @@ serve(async (req) => {
     if (!text) {
       throw new Error('Email drafting failed: the AI model returned no structured text. Try Launch quality mode.');
     }
-    return Response.json(JSON.parse(text), { headers: corsHeaders });
+    return Response.json(cleanDraft(JSON.parse(text)), { headers: corsHeaders });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500, headers: corsHeaders });
   }

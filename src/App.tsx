@@ -53,6 +53,33 @@ const statuses: { value: LeadStatus; label: string }[] = [
   { value: 'not_fit', label: 'Not fit' },
 ];
 
+const decisionMakerGuide: Record<LeadCategory, { primary: string; reason: string }> = {
+  'NDIS support coordinator': {
+    primary: 'Support Coordination Manager, Specialist Support Coordinator, Team Lead, Director',
+    reason: 'They influence participant referrals and choose clinical partners for complex in-home support.',
+  },
+  'Home Care Package provider': {
+    primary: 'Home Care Package Manager, Care Manager, Clinical Care Manager, Intake or Operations Manager',
+    reason: 'They manage package clients and approve external nursing, escalation and reporting partners.',
+  },
+  'Retirement village': {
+    primary: 'Village Manager, Resident Services Manager, Community Manager, Wellness Coordinator',
+    reason: 'They know residents and families who may need in-home clinical support or post-discharge help.',
+  },
+  'Aged care provider': {
+    primary: 'Facility Manager, General Manager, Clinical Care Manager, Admissions or Home Care Manager',
+    reason: 'They influence family enquiries, transitions of care and extra clinical support pathways.',
+  },
+  'GP clinic': {
+    primary: 'Practice Manager, Nurse Manager, Principal GP, Practice Owner',
+    reason: 'They manage referral pathways for wound care, chronic disease, medication and home nursing support.',
+  },
+  'Allied health provider': {
+    primary: 'Practice Manager, Principal Clinician, Director, Referral Coordinator',
+    reason: 'They see clients who may need complementary nursing, care coordination or home visit support.',
+  },
+};
+
 const emptyLead: LeadFormInput = {
   organisation: '',
   category: 'NDIS support coordinator',
@@ -719,6 +746,19 @@ function DiscoverPanel({
         </div>
       </div>
 
+      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <span className="label">Who the app will look for</span>
+        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+          {brief.categories.map((category) => (
+            <div key={category} className="rounded-md bg-white p-3 ring-1 ring-slate-200">
+              <div className="text-sm font-semibold text-slate-900">{category}</div>
+              <p className="mt-1 text-sm leading-6 text-slate-600">{decisionMakerGuide[category].primary}</p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">{decisionMakerGuide[category].reason}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-5 flex justify-end">
         <button onClick={onDiscover} disabled={busy || brief.categories.length === 0} className="button-primary">
           Research and draft {brief.leadCount} leads
@@ -781,9 +821,17 @@ function LeadReviewPanel({
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
-        <Info icon={<UserRound size={17} />} label="Person to reach" value={[lead.contactName, lead.contactRole].filter(Boolean).join(' · ') || 'Find the decision maker'} />
+        <Info icon={<UserRound size={17} />} label="Person to reach" value={[lead.contactName, lead.contactRole].filter(Boolean).join(' · ') || decisionMakerGuide[lead.category].primary} />
         <Info icon={<Mail size={17} />} label="Email" value={lead.email || 'Needs verification'} />
         <Info icon={<MapPin size={17} />} label="Area" value={[lead.suburb, lead.postcode, lead.region, lead.radiusKm ? `${lead.radiusKm}km` : ''].filter(Boolean).join(' · ') || lead.location || 'Not set'} />
+      </div>
+
+      <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-semibold text-slate-800">Recommended decision maker</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-700">
+          Contact {lead.contactName ? lead.contactName : `the ${lead.contactRole || decisionMakerGuide[lead.category].primary}`} because {decisionMakerGuide[lead.category].reason.toLowerCase()}
+        </p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{lead.notes || lead.nextAction || 'The app will use public website, search and LinkedIn signals where available to verify the best contact path.'}</p>
       </div>
 
       <div className="mt-5 rounded-lg border border-sky-100 bg-sky-50 p-4">

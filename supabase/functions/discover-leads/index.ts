@@ -13,6 +13,15 @@ type LeadCategory =
   | 'GP clinic'
   | 'Allied health provider';
 
+const decisionMakerGuide: Record<LeadCategory, string> = {
+  'NDIS support coordinator': 'Primary decision makers: Support Coordination Manager, Specialist Support Coordinator, Support Coordination Team Lead, Director/Founder of a support coordination provider. Why: they influence participant referrals, choose responsive clinical partners, and coordinate complex in-home support needs.',
+  'Home Care Package provider': 'Primary decision makers: Home Care Package Manager, Care Manager, Clinical Care Manager, Intake/Admissions Manager, Operations Manager. Why: they manage package clients, approve external nursing/allied partners, and need reliable reporting, escalation and visit coordination.',
+  'Retirement village': 'Primary decision makers: Village Manager, Resident Services Manager, Community Manager, Wellness/Health Coordinator. Why: they know residents and families who may need in-home clinical support, escalation, post-discharge care or family communication.',
+  'Aged care provider': 'Primary decision makers: Facility Manager, General Manager, Clinical Care Manager, Admissions/Intake Manager, Home Care Manager. Why: they influence family enquiries, transitions of care, respite/discharge pathways and referrals for clients needing extra clinical support.',
+  'GP clinic': 'Primary decision makers: Practice Manager, Nurse Manager, Principal GP, Practice Owner. Why: they manage referral pathways and see patients needing home nursing, chronic disease support, wound care, medication oversight and post-discharge follow-up.',
+  'Allied health provider': 'Primary decision makers: Practice Manager, Principal Clinician, Director/Owner, Referral Coordinator. Why: they often support clients who need complementary nursing, care coordination, home visits and stronger escalation pathways.',
+};
+
 interface SearchRequest {
   location?: string;
   suburb?: string;
@@ -27,6 +36,10 @@ interface SearchRequest {
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: corsHeaders });
+}
+
+function targetDecisionMakers(categories: LeadCategory[]) {
+  return categories.map((category) => `${category}: ${decisionMakerGuide[category]}`).join('\n');
 }
 
 async function providerError(response: Response, provider: 'Search provider' | 'Lead analysis') {
@@ -126,27 +139,42 @@ serve(async (req) => {
     const model = modelMode === 'save_tokens'
       ? Deno.env.get('OUTREACH_OPENAI_TEST_MODEL') ?? 'gpt-4.1-nano'
       : Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini';
-    const query = `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia`;
+    const queries = [
+      `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia contact phone email`,
+      `${categories.join(' OR ')} ${area} Practice Manager Care Manager Support Coordination Manager Intake Admissions phone email website LinkedIn`,
+      `site:linkedin.com/company (${categories.join(' OR ')}) ${area} healthcare aged care NDIS`,
+      `site:linkedin.com/in (${categories.join(' OR ')}) ${area} Practice Manager Care Manager Support Coordinator Director`,
+    ];
 
-    const searchResponse = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: searchKey,
-        query,
-        search_depth: 'advanced',
-        include_answer: false,
-        include_raw_content: false,
-        max_results: Math.min(20, Math.max(requestedCount * 2, 10)),
-      }),
-    });
+    const searchPayloads = await Promise.all(queries.map(async (query) => {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: searchKey,
+          query,
+          search_depth: 'advanced',
+          include_answer: false,
+          include_raw_content: true,
+          max_results: Math.min(10, Math.max(requestedCount, 5)),
+        }),
+      });
 
-    if (!searchResponse.ok) {
-      return json({ error: await providerError(searchResponse, 'Search provider') }, 502);
-    }
+      if (!response.ok) {
+        throw new Error(await providerError(response, 'Search provider'));
+      }
 
-    const searchPayload = await searchResponse.json();
-    const results = Array.isArray(searchPayload.results) ? searchPayload.results : [];
+      return response.json();
+    }));
+
+    const seenUrls = new Set<string>();
+    const results = searchPayloads.flatMap((payload) => Array.isArray(payload.results) ? payload.results : [])
+      .filter((result: Record<string, unknown>) => {
+        const url = String(result.url ?? '');
+        if (!url || seenUrls.has(url)) return false;
+        seenUrls.add(url);
+        return true;
+      });
 
     if (results.length === 0) {
       return json({ error: `No search results found for ${area}. Try a broader radius or fewer lead types.` }, 404);
@@ -163,7 +191,21 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: `You are an autonomous healthcare outreach research assistant for Paracare. Return up to ${requestedCount} suitable Australian outreach leads from supplied web search results. Use only public facts present in the search results. Do not invent email addresses, phone numbers, websites or personal names. If a public source does not show a contact person, leave contactName empty and infer only a safe role such as Practice Manager or Referrals Lead. For each candidate, list services offered, likely business needs, why Paracare is a good fit, concerns, best outreach angle, and a priority score. Only return organisations plausibly suitable for in-home clinical care, NDIS, aged care, GP or allied-health referral relationships.`,
+            content: `You are an autonomous healthcare outreach research assistant for Paracare, an Australian in-home clinical care provider. Return up to ${requestedCount} suitable Australian outreach leads from supplied public web and LinkedIn search results.
+
+Use only public facts present in the supplied results. Do not invent email addresses, phone numbers, websites, LinkedIn profiles or personal names. If a public source does not show a named person, leave contactName empty and recommend the most likely role in contactRole.
+
+Decision-maker guide:
+${targetDecisionMakers(categories)}
+
+For each candidate, explain:
+- what the organisation does
+- the main person or role Paracare should contact to get referral/client conversations
+- why that role matters for NDIS, Home Care Packages, aged care, GP or allied-health referrals
+- public phone/email/website/LinkedIn evidence found, if available
+- services offered, likely needs, concerns, outreach angle, and priority score
+
+Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need in-home nursing, care coordination, post-discharge support, medication oversight, wound care, complex disability support, or family communication.`,
           },
           {
             role: 'user',
@@ -172,10 +214,12 @@ serve(async (req) => {
               requestedCount,
               categories,
               outreachInstructions: notes,
+              decisionMakerGuide: targetDecisionMakers(categories),
               searchResults: results.map((result: Record<string, unknown>) => ({
                 title: result.title,
                 url: result.url,
                 content: result.content,
+                rawContent: typeof result.raw_content === 'string' ? result.raw_content.slice(0, 5000) : '',
               })),
             }),
           },
