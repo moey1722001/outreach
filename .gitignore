@@ -12,6 +12,7 @@ dist-ssr
 
 .env
 .vercel
+supabase/.temp
 .DS_Store
 .idea
 .vscode/*

@@ -13,7 +13,7 @@ serve(async (req) => {
     const { lead, tone = 'warm' } = await req.json();
 
     if (!openAiKey) {
-      return Response.json(localDraft(lead, tone), { headers: corsHeaders });
+      return Response.json({ error: 'Email drafting is not configured: missing OPENAI_API_KEY Supabase Edge Function secret.' }, { status: 500, headers: corsHeaders });
     }
 
     const response = await fetch('https://api.openai.com/v1/responses', {
@@ -60,34 +60,3 @@ serve(async (req) => {
     return Response.json({ error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500, headers: corsHeaders });
   }
 });
-
-function localDraft(lead: Record<string, unknown>, tone: string) {
-  const organisation = String(lead.organisation ?? '');
-  const contactName = String(lead.contactName ?? '');
-  const fitSummary = String(lead.fitSummary ?? '');
-  const outreachAngle = String(lead.outreachAngle ?? '');
-  const firstName = contactName ? contactName.split(' ')[0] : '';
-  const services = Array.isArray(lead.servicesOffered) ? lead.servicesOffered.join(', ') : '';
-  const greeting = firstName ? `Hi ${firstName},` : 'Hi,';
-  return {
-    subject: `Referral support for ${organisation}`,
-    body: [
-      greeting,
-      '',
-      `I’m reaching out from Paracare because ${organisation} looks like a relevant organisation for coordinated in-home clinical support.`,
-      '',
-      'Paracare supports clients who need reliable nursing oversight, clear documentation, and responsive communication between families, coordinators and care teams.',
-      '',
-      services ? `I noticed your services include ${services}.` : '',
-      fitSummary ? `What stood out in our research: ${fitSummary}` : '',
-      outreachAngle ? `The potential fit: ${outreachAngle}` : '',
-      '',
-      tone === 'concise'
-        ? 'Would it be worth a brief conversation next week?'
-        : 'Would you be open to a short conversation next week to see whether Paracare could be useful for any current or future clients?',
-      '',
-      'Kind regards,',
-      'Paracare',
-    ].filter(Boolean).join('\n'),
-  };
-}
