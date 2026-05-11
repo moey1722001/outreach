@@ -193,7 +193,7 @@ export default function App() {
         setAuthMessage('Magic link sent. Check your email to continue.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in.');
+      setError(authErrorMessage(err));
     } finally {
       setBusy('');
     }
@@ -365,6 +365,9 @@ export default function App() {
               <p className="text-sm text-slate-500">Private internal access</p>
             </div>
           </div>
+          <p className="mb-4 text-sm leading-6 text-slate-600">
+            Sign in with an invited Outreach account. Leave password blank to receive a magic link.
+          </p>
           {error && <Alert tone="danger" message={error} />}
           {authMessage && <Alert tone="info" message={authMessage} />}
           <div className="space-y-3">
@@ -467,6 +470,20 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+function authErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+
+  if (/invalid login credentials/i.test(message) || /user not found/i.test(message)) {
+    return 'No Outreach account was found for those details. Add this email in the Outreach Supabase Auth users first, then try again.';
+  }
+
+  if (/signups not allowed/i.test(message)) {
+    return 'This private app only allows invited users. Add this email in the Outreach Supabase Auth users first, then send a magic link.';
+  }
+
+  return message || 'Could not sign in.';
 }
 
 const navItems: { page: AppPage; label: string; icon: React.ReactNode }[] = [

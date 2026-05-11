@@ -58,3 +58,7 @@ supabase secrets set OUTREACH_OPENAI_MODEL=gpt-4.1-mini
 ```
 
 Auth signups are disabled in `outreach/supabase/config.toml`. Invite only the two internal users in the Outreach Supabase dashboard.
+
+## Internal access
+
+The deployed app is private and requires an Outreach Supabase Auth user. Add the two internal users in the Outreach Supabase dashboard under Authentication > Users, then either set a password for each user or use the app's magic-link sign in.
