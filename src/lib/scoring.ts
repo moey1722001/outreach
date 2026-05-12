@@ -57,6 +57,27 @@ const highNeedSignals = [
   'escalation',
 ];
 
+const commercialFitSignals = [
+  'home care package',
+  'hcp',
+  'support at home',
+  'plan-managed',
+  'plan managed',
+  'self-managed',
+  'self managed',
+  'ndis funding',
+  'sil',
+  'supported independent living',
+  'high-needs participants',
+  'complex participants',
+  'funded nursing',
+  'clinical supports',
+  'nursing supports',
+  'premium',
+  'care manager',
+  'package clients',
+];
+
 const lowFitSignals = [
   'gym',
   'retail',
@@ -66,6 +87,9 @@ const lowFitSignals = [
   'cosmetic',
   'not accepting',
   'closed',
+  'low cost support',
+  'low-cost support',
+  'social support only',
 ];
 
 export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' | 'website' | 'needs' | 'location' | 'notes'> & Partial<Pick<Lead, 'businessNeeds' | 'suitabilitySummary' | 'outreachAngle'>>): number {
@@ -90,6 +114,7 @@ export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' 
   if (highIntentRoles.some((term) => role.includes(term))) score += 14;
   if (notes.includes('referral') || notes.includes('transition')) score += 8;
   score += Math.min(18, highNeedSignals.filter((term) => notes.includes(term)).length * 4);
+  score += Math.min(16, commercialFitSignals.filter((term) => notes.includes(term)).length * 4);
   if (lowFitSignals.some((term) => notes.includes(term))) score -= 20;
 
   return Math.max(5, Math.min(98, score));

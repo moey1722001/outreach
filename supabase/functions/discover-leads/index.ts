@@ -48,6 +48,18 @@ Position Paracare as: "Paramedic-led wellness and clinical monitoring designed t
 
 Services and value points include BP monitoring, heart rate monitoring, SpO2 monitoring, 12 lead ECGs when clinically indicated, systems-based reviews, falls risk monitoring, wellness assessments, family dashboard visibility, clinical trend reporting, escalation recommendations, post-discharge oversight, communication with providers/families and supporting clients to remain safely in the community.`;
 
+const commercialFitContext = `Paracare is a premium clinical monitoring and wellness service, not low-cost support work. Commercially realistic leads are organisations or pathways where premium monitoring may be fundable or valued.
+
+Preferred commercial-fit signals:
+- Home Care Package / Support at Home providers.
+- Plan-managed or self-managed NDIS participant pathways.
+- SIL providers and organisations managing high-needs participants.
+- Organisations already funding nursing, clinical supports, post-discharge oversight or complex-care monitoring.
+- Providers with care managers, clinical coordinators, package managers, SIL managers or intake teams who can identify funded clients.
+
+Lower commercial fit:
+- Businesses focused only on low-cost support work, social support, retail services, generic wellness or clients unlikely to fund premium monitoring.`;
+
 const idealClientSignals = [
   'elderly clients',
   'high-risk community clients',
@@ -69,6 +81,7 @@ const poorFitSignals = [
   'unrelated trades',
   'generic marketing companies',
   'businesses with no disability, aged care or community care relevance',
+  'businesses focused only on low-cost support work or social support without clinical oversight needs',
 ];
 
 interface SearchRequest {
@@ -314,14 +327,15 @@ serve(async (req) => {
     const model = modelMode === 'save_tokens'
       ? Deno.env.get('OUTREACH_OPENAI_TEST_MODEL') ?? 'gpt-4.1-nano'
       : Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini';
-    const priorityTerms = 'complex care SIL supported independent living ABI neuro chronic disease falls risk post-discharge hospital avoidance care manager clinical coordinator community nursing support at home';
+    const categoryQuery = categories.join(' OR ');
+    const priorityTerms = 'complex care SIL ABI neuro chronic disease falls risk post-discharge HCP plan-managed self-managed NDIS clinical supports';
     const queries = [
-      `${categories.join(' OR ')} near ${area} within ${radiusKm ?? 10}km healthcare referrals community aged care NDIS Australia contact phone email ${priorityTerms}`,
-      `${categories.join(' OR ')} ${area} Practice Manager Care Manager Clinical Coordinator Support Coordination Manager Intake Admissions phone email website LinkedIn`,
-      `${categories.join(' OR ')} ${area} "contact us" email phone referrals intake "support at home" "complex care"`,
-      `${categories.join(' OR ')} ${area} "@gmail.com" OR "@outlook.com" OR "@hotmail.com" OR "@org.au" OR "@com.au" referrals intake`,
-      `site:linkedin.com/company (${categories.join(' OR ')}) ${area} healthcare aged care NDIS community care SIL`,
-      `site:linkedin.com/in (${categories.join(' OR ')}) ${area} Practice Manager Care Manager Support Coordinator Clinical Coordinator Director`,
+      `${categoryQuery} near ${area} contact email phone ${priorityTerms}`,
+      `${categoryQuery} ${area} Care Manager Clinical Coordinator Intake Admissions referrals`,
+      `${categoryQuery} ${area} "contact us" referrals intake "support at home"`,
+      `${categoryQuery} ${area} email phone referrals HCP SIL NDIS`,
+      `site:linkedin.com/company ${categoryQuery} ${area} aged care NDIS SIL`,
+      `site:linkedin.com/in ${categoryQuery} ${area} Care Manager Support Coordinator Director`,
     ];
 
     const searchPayloads = await Promise.all(queries.map(async (query) => {
@@ -374,6 +388,9 @@ serve(async (req) => {
 Paracare context:
 ${paracareContext}
 
+Commercial fit context:
+${commercialFitContext}
+
 Use only public facts present in the supplied results. Do not invent email addresses, phone numbers, websites, LinkedIn profiles or personal names. If a public source does not show a named person, leave contactName empty and recommend the most likely role in contactRole.
 
 The category field must be exactly one of: ${categories.join(', ')}.
@@ -394,17 +411,23 @@ For each candidate, explain:
 - the main person or role Paracare should contact to get referral/client conversations
 - why that role matters for NDIS, Home Care Packages, aged care, GP or allied-health referrals
 - public phone/email/website/LinkedIn evidence found, if available
-- services offered, likely needs, concerns, outreach angle, and priority score
+- services offered, likely needs, commercial fit, concerns, outreach angle, and priority score
 
 Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need proactive wellness monitoring, systems-based health reviews, trend monitoring, deterioration recognition, family visibility, post-discharge oversight, escalation recommendations, complex disability support or high-needs community oversight.
+
+Commercial awareness:
+- Do not score a lead highly on clinical relevance alone. Also assess whether Paracare's premium monitoring model is financially realistic.
+- Prefer HCP/Support at Home providers, plan-managed or self-managed NDIS pathways, SIL providers, high-needs participant managers, and organisations already funding nursing or clinical supports.
+- If the organisation appears focused on low-cost support work only, social support only, or unfunded generic wellness, lower the score and list that concern.
+- Include commercial-fit evidence or uncertainty in suitabilitySummary, businessNeeds, concerns or notes.
 
 Do not include businesses that are not relevant to disability, aged care, community care, retirement living, discharge support, high-needs allied health or clinical community monitoring. If a search result is only a generic clinic, gym, retailer, marketing company or unrelated provider, exclude it.
 
 Scoring:
-- 9-10: strong fit; clear high-needs elderly/disability/community-care client base, SIL/retirement/HCP/discharge pathway, care managers/coordinators, complex care or hospital avoidance signals.
-- 7-8: good fit; likely referral pathway and relevant client base, but evidence is less complete.
+- 9-10: strong clinical and commercial fit; clear high-needs elderly/disability/community-care client base plus HCP, plan/self-managed NDIS, SIL, funded nursing, clinical supports, care managers/coordinators, complex care or hospital avoidance signals.
+- 7-8: good fit; likely referral pathway and relevant client base, but commercial evidence is less complete.
 - 4-6: possible but needs human review.
-- 1-3: low fit; only include if there is still a clear reason Paracare may be relevant.
+- 1-3: low clinical or commercial fit; only include if there is still a clear reason Paracare may be relevant.
 
 Email/phone rules:
 - Search the supplied website/contact/search snippets carefully for a public email and phone number.
