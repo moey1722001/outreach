@@ -156,6 +156,10 @@ What matters about the Paracare app:
 - It supports continuity between home visits and helps providers spot deterioration concerns earlier.
 - It is useful for NDIS participants with complex needs, SIL homes, HCP clients, older people, falls-risk clients, ABI/neuro/chronic disease clients and people transitioning home after hospital.
 
+Ideal client fit:
+- Paracare is especially relevant for clients with frequent falls, chronic disease, neurological conditions, ABI, epilepsy, dementia/cognitive decline, post-hospital discharge needs, recurrent hospital presentations, SIL participation, mobility decline, frailty, respiratory disease, cardiovascular disease, high family involvement or complex support coordination.
+- Use these indicators when they match the lead, but do not imply the organisation has a client group unless the lead research supports it or clearly frames it as a possible fit.
+
 Commercial awareness:
 - Best-fit conversations are usually with HCP/Support at Home providers, SIL providers, care managers, clinical coordinators, support coordinators, plan-managed or self-managed NDIS pathways, and organisations already arranging nursing or clinical supports.
 - The email should frame Paracare as useful where clients already need higher-touch oversight, family visibility, clinical monitoring or post-discharge reassurance.
@@ -171,6 +175,7 @@ Rules:
 - Use plain language, clinical credibility, and a calm helpful tone.
 - Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, post-discharge support, or complex-care support.
 - Where relevant, make it clear Paracare is for higher-needs clients who justify premium clinical monitoring, not every client on their books.
+- If the lead appears to support one of the ideal client groups, name that group in a natural way and connect it to monitoring, trend visibility, family reassurance or escalation recommendations.
 - Explain Paracare and the app in one useful sentence. Do not make the app sound like a generic portal or software pitch.
 - Use the terms "wellness monitoring", "clinical monitoring", "trend reporting", "family visibility", "post-discharge oversight" or "escalation recommendations" only where they fit the lead.
 - Do not overclaim hospital reduction. You may say Paracare can support early recognition and reduce avoidable hospital presentations where appropriate.

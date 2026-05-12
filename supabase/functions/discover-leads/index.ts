@@ -61,18 +61,30 @@ Lower commercial fit:
 - Businesses focused only on low-cost support work, social support, retail services, generic wellness or clients unlikely to fund premium monitoring.`;
 
 const idealClientSignals = [
-  'elderly clients',
-  'high-risk community clients',
-  'NDIS participants with complex needs',
-  'SIL homes',
-  'neurological conditions',
-  'ABI clients',
+  'frequent falls or falls-risk clients',
   'chronic disease clients',
-  'frequent hospital presentations',
-  'post-discharge clients',
-  'falls-risk clients',
-  'clients needing additional oversight or family reassurance',
+  'neurological conditions',
+  'ABI / acquired brain injury clients',
+  'epilepsy or seizure-related support needs',
+  'dementia or cognitive decline',
+  'post-hospital discharge clients',
+  'recurrent hospital presentations',
+  'SIL participants',
+  'mobility decline',
+  'frailty',
+  'respiratory disease',
+  'cardiovascular disease',
+  'high family involvement or family reassurance needs',
+  'participants requiring complex support coordination',
+  'elderly or high-risk community clients',
 ];
+
+const idealClientFitInstruction = `Analyse the supplied websites, service descriptions, snippets, LinkedIn/company profiles and contact pages for likely end-client fit. Do not require the exact words to appear if the service profile strongly implies the client group, but be clear when the evidence is inferred.
+
+High-value client indicators for Paracare:
+${idealClientSignals.map((signal) => `- ${signal}`).join('\n')}
+
+For each lead, suitabilitySummary should explicitly state which ideal client indicators are present, likely or missing. If the organisation looks commercially attractive but does not appear to support high-needs clients, lower the score.`;
 
 const poorFitSignals = [
   'generic retail businesses',
@@ -328,7 +340,7 @@ serve(async (req) => {
       ? Deno.env.get('OUTREACH_OPENAI_TEST_MODEL') ?? 'gpt-4.1-nano'
       : Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini';
     const categoryQuery = categories.join(' OR ');
-    const priorityTerms = 'complex care SIL ABI neuro chronic disease falls risk post-discharge HCP plan-managed self-managed NDIS clinical supports';
+    const priorityTerms = 'falls chronic disease neuro ABI epilepsy dementia discharge SIL frailty respiratory cardiac complex support';
     const queries = [
       `${categoryQuery} near ${area} contact email phone ${priorityTerms}`,
       `${categoryQuery} ${area} Care Manager Clinical Coordinator Intake Admissions referrals`,
@@ -391,6 +403,9 @@ ${paracareContext}
 Commercial fit context:
 ${commercialFitContext}
 
+Ideal client fit detection:
+${idealClientFitInstruction}
+
 Use only public facts present in the supplied results. Do not invent email addresses, phone numbers, websites, LinkedIn profiles or personal names. If a public source does not show a named person, leave contactName empty and recommend the most likely role in contactRole.
 
 The category field must be exactly one of: ${categories.join(', ')}.
@@ -400,9 +415,6 @@ The likelihood field is the lead score from 1 to 10, where 10 means strongest re
 Decision-maker guide:
 ${targetDecisionMakers(categories)}
 
-Ideal end-client signals to prioritise:
-${idealClientSignals.map((signal) => `- ${signal}`).join('\n')}
-
 Low-priority or do-not-target signals:
 ${poorFitSignals.map((signal) => `- ${signal}`).join('\n')}
 
@@ -411,9 +423,15 @@ For each candidate, explain:
 - the main person or role Paracare should contact to get referral/client conversations
 - why that role matters for NDIS, Home Care Packages, aged care, GP or allied-health referrals
 - public phone/email/website/LinkedIn evidence found, if available
-- services offered, likely needs, commercial fit, concerns, outreach angle, and priority score
+- services offered, ideal client fit, likely needs, commercial fit, concerns, outreach angle, and priority score
 
 Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need proactive wellness monitoring, systems-based health reviews, trend monitoring, deterioration recognition, family visibility, post-discharge oversight, escalation recommendations, complex disability support or high-needs community oversight.
+
+Ideal client fit:
+- Analyse the organisation's website, service descriptions and public profile to infer whether they likely support clients with falls, chronic disease, neurological conditions, ABI, epilepsy, dementia/cognitive decline, hospital discharge needs, recurrent hospital presentations, SIL participation, mobility decline, frailty, respiratory disease, cardiovascular disease, high family involvement or complex support coordination.
+- High-scoring leads should show both a referral pathway and a likely concentration of these client types.
+- If these indicators are only inferred, say so. If they are absent, lower the score and add the concern.
+- Put the strongest ideal-client evidence in suitabilitySummary, businessNeeds, needs or notes so a human reviewer can quickly see why the lead matters.
 
 Commercial awareness:
 - Do not score a lead highly on clinical relevance alone. Also assess whether Paracare's premium monitoring model is financially realistic.
@@ -424,8 +442,8 @@ Commercial awareness:
 Do not include businesses that are not relevant to disability, aged care, community care, retirement living, discharge support, high-needs allied health or clinical community monitoring. If a search result is only a generic clinic, gym, retailer, marketing company or unrelated provider, exclude it.
 
 Scoring:
-- 9-10: strong clinical and commercial fit; clear high-needs elderly/disability/community-care client base plus HCP, plan/self-managed NDIS, SIL, funded nursing, clinical supports, care managers/coordinators, complex care or hospital avoidance signals.
-- 7-8: good fit; likely referral pathway and relevant client base, but commercial evidence is less complete.
+- 9-10: strong clinical and commercial fit; clear high-needs client indicators such as falls, chronic disease, neuro/ABI, epilepsy, dementia, post-discharge, recurrent hospital presentations, SIL, frailty, respiratory/cardiovascular disease or complex support coordination, plus HCP, plan/self-managed NDIS, funded nursing or clinical supports.
+- 7-8: good fit; likely referral pathway and relevant client base, but ideal-client or commercial evidence is less complete.
 - 4-6: possible but needs human review.
 - 1-3: low clinical or commercial fit; only include if there is still a clear reason Paracare may be relevant.
 
