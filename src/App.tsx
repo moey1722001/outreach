@@ -36,6 +36,7 @@ const categories: LeadCategory[] = [
   'Aged care provider',
   'SIL provider',
   'Community nursing provider',
+  'Disability service provider',
   'Hospital discharge planner',
   'GP clinic',
   'Allied health provider',
@@ -81,6 +82,10 @@ const decisionMakerGuide: Record<LeadCategory, { primary: string; reason: string
   'Community nursing provider': {
     primary: 'Clinical Coordinator, Nursing Manager, Care Manager, Intake Manager, Director',
     reason: 'They manage community clients who may need structured monitoring, trend reporting and extra post-discharge oversight.',
+  },
+  'Disability service provider': {
+    primary: 'Operations Manager, Support Coordination Manager, Clinical Lead, Intake Manager, Director',
+    reason: 'They support participants with complex disability needs and may need clinical monitoring, escalation support and family-facing updates.',
   },
   'Hospital discharge planner': {
     primary: 'Discharge Planner, NUM, Transitional Care Coordinator, Social Worker, Care Navigation Lead',
@@ -150,7 +155,7 @@ export default function App() {
     radiusKm: 10,
     leadCount: 10,
     categories: ['NDIS support coordinator', 'Home Care Package provider', 'SIL provider'],
-    notes: 'Prioritise high-needs community clients where premium paramedic-led wellness and clinical monitoring is financially realistic. Look for frequent falls, chronic disease, neuro/ABI, epilepsy, dementia or cognitive decline, post-discharge needs, recurrent hospital presentations, SIL participants, mobility decline, frailty, respiratory or cardiovascular disease, high family involvement, and complex support coordination. Prefer HCP/Support at Home providers, plan-managed or self-managed NDIS pathways, SIL providers, and organisations already funding nursing or clinical supports.',
+    notes: 'Find healthcare and community care organisations within the selected radius that may benefit from paramedic-led wellness monitoring, chronic disease support, post-discharge monitoring, falls-risk assessments, vital sign tracking or family-facing clinical updates. Do not over-filter: return potentially suitable leads first, then rank by suitability. Prioritise NDIS support coordinators, HCP/Support at Home providers, retirement villages, SIL providers, community nursing providers, aged care organisations, allied health clinics and disability service providers supporting complex clients, elderly or chronic disease populations, hospital avoidance, wellness programs or in-home support.',
     modelMode: 'save_tokens',
   });
   const [draft, setDraft] = useState<DraftEmail | null>(null);

@@ -12,6 +12,7 @@ type LeadCategory =
   | 'Aged care provider'
   | 'SIL provider'
   | 'Community nursing provider'
+  | 'Disability service provider'
   | 'Hospital discharge planner'
   | 'GP clinic'
   | 'Allied health provider';
@@ -23,6 +24,7 @@ const leadCategories: LeadCategory[] = [
   'Aged care provider',
   'SIL provider',
   'Community nursing provider',
+  'Disability service provider',
   'Hospital discharge planner',
   'GP clinic',
   'Allied health provider',
@@ -35,6 +37,7 @@ const decisionMakerGuide: Record<LeadCategory, string> = {
   'Aged care provider': 'Primary decision makers: Facility Manager, General Manager, Clinical Care Manager, Admissions/Intake Manager, Home Care Manager. Why: they influence family enquiries, transitions of care, respite/discharge pathways and referrals for clients needing extra clinical support.',
   'SIL provider': 'Primary decision makers: SIL Manager, Operations Manager, House Manager, Support Coordination Lead, Director/Founder. Why: they support NDIS participants with complex daily needs and often need clinical visibility, deterioration recognition, escalation recommendations and family reassurance.',
   'Community nursing provider': 'Primary decision makers: Clinical Coordinator, Nursing Manager, Care Manager, Intake Manager, Director. Why: they manage community clients who may need structured monitoring, trend reporting, escalation support and extra post-discharge oversight.',
+  'Disability service provider': 'Primary decision makers: Operations Manager, Support Coordination Manager, Clinical Lead, Intake Manager, Director/Founder. Why: they support participants with complex disability needs and may need clinical monitoring, escalation support, in-home oversight and family-facing updates.',
   'Hospital discharge planner': 'Primary decision makers: Discharge Planner, NUM, Transitional Care Coordinator, Social Worker, Care Navigation Lead. Why: they help clients return home safely and can identify people needing proactive monitoring after discharge.',
   'GP clinic': 'Primary decision makers: Practice Manager, Nurse Manager, Principal GP, Practice Owner. Why: they manage referral pathways and see patients needing chronic disease monitoring, falls-risk review, post-discharge oversight and added clinical visibility.',
   'Allied health provider': 'Primary decision makers: Practice Manager, Principal Clinician, Director/Owner, Referral Coordinator. Why: they often support high-needs clients who may need complementary clinical monitoring, care coordination, home visits and stronger escalation pathways.',
@@ -88,13 +91,26 @@ For each lead, suitabilitySummary should explicitly state which ideal client ind
 
 const poorFitSignals = [
   'generic retail businesses',
-  'unrelated healthcare businesses',
   'standard gyms',
   'unrelated trades',
   'generic marketing companies',
   'businesses with no disability, aged care or community care relevance',
   'businesses focused only on low-cost support work or social support without clinical oversight needs',
 ];
+
+const searchScopeInstruction = `Find healthcare and community care organisations within the selected radius that may benefit from paramedic-led wellness monitoring, chronic disease support, post-discharge monitoring, falls-risk assessments, vital sign tracking or family-facing clinical updates.
+
+Include potentially suitable:
+- NDIS support coordinators
+- Home Care Package / Support at Home providers
+- Retirement villages
+- SIL providers
+- Community nursing providers
+- Aged care organisations
+- Allied health clinics
+- Disability service providers
+
+Do not over-filter results. Return potentially suitable leads first, then rank them by suitability. Prioritise organisations that support complex clients, manage elderly or chronic disease populations, mention hospital avoidance or wellness programs, or provide in-home support services.`;
 
 interface SearchRequest {
   location?: string;
@@ -131,6 +147,7 @@ function closestCategory(value: unknown, categories: LeadCategory[]): LeadCatego
   if (text.includes('aged')) return categories.includes('Aged care provider') ? 'Aged care provider' : categories[0];
   if (text.includes('sil') || text.includes('supported independent living')) return categories.includes('SIL provider') ? 'SIL provider' : categories[0];
   if (text.includes('community nursing') || text.includes('nursing')) return categories.includes('Community nursing provider') ? 'Community nursing provider' : categories[0];
+  if (text.includes('disability') || text.includes('participant support')) return categories.includes('Disability service provider') ? 'Disability service provider' : categories[0];
   if (text.includes('discharge') || text.includes('transitional care')) return categories.includes('Hospital discharge planner') ? 'Hospital discharge planner' : categories[0];
   if (text.includes('gp') || text.includes('clinic')) return categories.includes('GP clinic') ? 'GP clinic' : categories[0];
   if (text.includes('allied')) return categories.includes('Allied health provider') ? 'Allied health provider' : categories[0];
@@ -160,6 +177,15 @@ function normaliseDomain(value: unknown) {
     .trim();
 }
 
+function isSocialOrProfileUrl(value: unknown) {
+  const text = String(value ?? '').toLowerCase();
+  return /linkedin\.com\/in\//.test(text)
+    || /facebook\.com\//.test(text)
+    || /instagram\.com\//.test(text)
+    || /x\.com\//.test(text)
+    || /twitter\.com\//.test(text);
+}
+
 function extractEmails(text: string) {
   return [...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])
     .map((email) => email.toLowerCase())
@@ -173,7 +199,9 @@ function extractPhones(text: string) {
 }
 
 function matchingEvidence(lead: Record<string, unknown>, results: Array<Record<string, unknown>>) {
-  const domain = normaliseDomain(lead.website);
+  const website = isSocialOrProfileUrl(lead.website) ? '' : String(lead.website ?? '');
+  const domain = normaliseDomain(website);
+  const weakDomains = new Set(['linkedin.com', 'facebook.com', 'instagram.com', 'x.com', 'twitter.com']);
   const genericWords = new Set(['care', 'health', 'healthcare', 'home', 'service', 'services', 'support', 'supports', 'group', 'australia', 'australian', 'community', 'provider', 'providers']);
   const organisation = String(lead.organisation ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const organisationWords = organisation.split(/\s+/).filter((word) => word.length > 3 && !genericWords.has(word));
@@ -182,8 +210,8 @@ function matchingEvidence(lead: Record<string, unknown>, results: Array<Record<s
     const url = String(result.url ?? '').toLowerCase();
     const title = String(result.title ?? '').toLowerCase();
     const content = String(result.content ?? '').toLowerCase();
-    if (domain && normaliseDomain(url) === domain) return true;
-    if (domain && url.includes(domain)) return true;
+    if (domain && !weakDomains.has(domain) && normaliseDomain(url) === domain) return true;
+    if (domain && !weakDomains.has(domain) && url.includes(domain)) return true;
     const haystack = `${title}\n${content}`;
     if (organisation && haystack.includes(organisation)) return true;
     const matchedWords = organisationWords.filter((word) => haystack.includes(word));
@@ -209,8 +237,9 @@ function publicContactFromEvidence(lead: Record<string, unknown>, results: Array
 
 function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[], fallbackRadius: number | null, results: Array<Record<string, unknown>>) {
   const publicContact = publicContactFromEvidence(lead, results);
-  const email = typeof lead.email === 'string' && lead.email.includes('@') ? lead.email : publicContact.email;
+  const email = publicContact.email;
   const phone = typeof lead.phone === 'string' && lead.phone.replace(/\D/g, '').length >= 9 ? lead.phone : publicContact.phone;
+  const website = typeof lead.website === 'string' && !isSocialOrProfileUrl(lead.website) ? lead.website : '';
   const notes = typeof lead.notes === 'string' ? lead.notes : '';
   const contactNote = email
     ? 'Public email found and needs human verification before sending.'
@@ -223,7 +252,7 @@ function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[],
     likelihood: leadScore(lead.likelihood),
     researchConfidence: score(lead.researchConfidence, leadScore(lead.likelihood)),
     radiusKm: typeof lead.radiusKm === 'number' ? lead.radiusKm : fallbackRadius,
-    website: typeof lead.website === 'string' ? lead.website : '',
+    website,
     location: typeof lead.location === 'string' ? lead.location : '',
     suburb: typeof lead.suburb === 'string' ? lead.suburb : '',
     postcode: typeof lead.postcode === 'string' ? lead.postcode : '',
@@ -339,14 +368,15 @@ serve(async (req) => {
     const model = modelMode === 'save_tokens'
       ? Deno.env.get('OUTREACH_OPENAI_TEST_MODEL') ?? 'gpt-4.1-nano'
       : Deno.env.get('OUTREACH_OPENAI_MODEL') ?? 'gpt-4.1-mini';
-    const categoryQuery = categories.join(' OR ');
-    const priorityTerms = 'falls chronic disease neuro ABI epilepsy dementia discharge SIL frailty respiratory cardiac complex support';
+    const selectedCategoryText = categories.join(', ');
+    const categoryQuery = 'NDIS HCP retirement SIL nursing aged care allied health disability';
+    const priorityTerms = 'wellness monitoring chronic disease post-discharge falls vital signs family updates';
     const queries = [
       `${categoryQuery} near ${area} contact email phone ${priorityTerms}`,
-      `${categoryQuery} ${area} Care Manager Clinical Coordinator Intake Admissions referrals`,
-      `${categoryQuery} ${area} "contact us" referrals intake "support at home"`,
-      `${categoryQuery} ${area} email phone referrals HCP SIL NDIS`,
-      `site:linkedin.com/company ${categoryQuery} ${area} aged care NDIS SIL`,
+      `${categoryQuery} ${area} in-home support complex clients contact`,
+      `${categoryQuery} ${area} "contact us" referrals intake`,
+      `${categoryQuery} ${area} hospital avoidance wellness programs`,
+      `site:linkedin.com/company ${categoryQuery} ${area}`,
       `site:linkedin.com/in ${categoryQuery} ${area} Care Manager Support Coordinator Director`,
     ];
 
@@ -403,11 +433,15 @@ ${paracareContext}
 Commercial fit context:
 ${commercialFitContext}
 
+Search scope:
+${searchScopeInstruction}
+
 Ideal client fit detection:
 ${idealClientFitInstruction}
 
 Use only public facts present in the supplied results. Do not invent email addresses, phone numbers, websites, LinkedIn profiles or personal names. If a public source does not show a named person, leave contactName empty and recommend the most likely role in contactRole.
 
+The selected lead categories are: ${selectedCategoryText}.
 The category field must be exactly one of: ${categories.join(', ')}.
 The status field must always be exactly "qualified".
 The likelihood field is the lead score from 1 to 10, where 10 means strongest referral potential for Paracare.
@@ -423,9 +457,14 @@ For each candidate, explain:
 - the main person or role Paracare should contact to get referral/client conversations
 - why that role matters for NDIS, Home Care Packages, aged care, GP or allied-health referrals
 - public phone/email/website/LinkedIn evidence found, if available
-- services offered, ideal client fit, likely needs, commercial fit, concerns, outreach angle, and priority score
+- services offered, ideal client fit, likely needs, commercial fit, concerns, outreach angle, suitability score, and the reason they may benefit from Paracare
 
 Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need proactive wellness monitoring, systems-based health reviews, trend monitoring, deterioration recognition, family visibility, post-discharge oversight, escalation recommendations, complex disability support or high-needs community oversight.
+
+Lead return strategy:
+- Do not over-filter. Return potentially suitable healthcare/community-care organisations first, then rank them by suitability.
+- Include adjacent but plausible organisations when they support complex clients, elderly/chronic disease populations, in-home supports, hospital avoidance, wellness programs, disability services, allied health or community nursing.
+- The fitSummary and suitabilitySummary must explain why the organisation may benefit from Paracare, especially where the fit is inferred.
 
 Ideal client fit:
 - Analyse the organisation's website, service descriptions and public profile to infer whether they likely support clients with falls, chronic disease, neurological conditions, ABI, epilepsy, dementia/cognitive decline, hospital discharge needs, recurrent hospital presentations, SIL participation, mobility decline, frailty, respiratory disease, cardiovascular disease, high family involvement or complex support coordination.
@@ -452,7 +491,8 @@ Email/phone rules:
 - Prefer direct organisation emails from the organisation's own website or contact page.
 - Generic public inboxes like admin@, info@, referrals@, intake@ or hello@ are acceptable if public.
 - Never invent an email. If no email is public, leave email empty and explain that it needs manual verification in notes.
-- Never use a personal LinkedIn profile as proof of a private email address.`,
+- Never use a personal LinkedIn profile as the organisation website.
+- Never use a personal LinkedIn profile as proof of an email address or phone number.`,
           },
           {
             role: 'user',
