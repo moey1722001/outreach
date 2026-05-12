@@ -186,6 +186,16 @@ function isSocialOrProfileUrl(value: unknown) {
     || /twitter\.com\//.test(text);
 }
 
+function isLinkedInCompanyUrl(value: unknown) {
+  const text = String(value ?? '').toLowerCase();
+  return /linkedin\.com\/company\//.test(text);
+}
+
+function isContactPageUrl(value: unknown) {
+  const text = String(value ?? '').toLowerCase();
+  return /\/(contact|contact-us|get-in-touch|enquiry|referral|intake)/.test(text) || /contact/.test(text);
+}
+
 function extractEmails(text: string) {
   return [...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [])
     .map((email) => email.toLowerCase())
@@ -195,23 +205,26 @@ function extractEmails(text: string) {
 function extractPhones(text: string) {
   return [...new Set((text.match(/(?:\+?61|0)[\d\s().-]{8,}\d/g) ?? [])
     .map((phone) => phone.replace(/\s+/g, ' ').trim())
-    .filter((phone) => phone.replace(/\D/g, '').length >= 9))];
+    .filter(isLikelyAustralianPhone))];
+}
+
+function isLikelyAustralianPhone(value: unknown) {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (/^61[23478]\d{8}$/.test(digits)) return true;
+  if (/^0[23478]\d{8}$/.test(digits)) return true;
+  if (/^1[38]00\d{6}$/.test(digits)) return true;
+  if (/^13\d{4}$/.test(digits)) return true;
+  return false;
 }
 
 function matchingEvidence(lead: Record<string, unknown>, results: Array<Record<string, unknown>>) {
-  const website = isSocialOrProfileUrl(lead.website) ? '' : String(lead.website ?? '');
-  const domain = normaliseDomain(website);
-  const weakDomains = new Set(['linkedin.com', 'facebook.com', 'instagram.com', 'x.com', 'twitter.com']);
   const genericWords = new Set(['care', 'health', 'healthcare', 'home', 'service', 'services', 'support', 'supports', 'group', 'australia', 'australian', 'community', 'provider', 'providers']);
   const organisation = String(lead.organisation ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   const organisationWords = organisation.split(/\s+/).filter((word) => word.length > 3 && !genericWords.has(word));
 
   return results.filter((result) => {
-    const url = String(result.url ?? '').toLowerCase();
     const title = String(result.title ?? '').toLowerCase();
     const content = String(result.content ?? '').toLowerCase();
-    if (domain && !weakDomains.has(domain) && normaliseDomain(url) === domain) return true;
-    if (domain && !weakDomains.has(domain) && url.includes(domain)) return true;
     const haystack = `${title}\n${content}`;
     if (organisation && haystack.includes(organisation)) return true;
     const matchedWords = organisationWords.filter((word) => haystack.includes(word));
@@ -228,9 +241,15 @@ function publicContactFromEvidence(lead: Record<string, unknown>, results: Array
     result.raw_content,
   ].filter(Boolean).join('\n')).join('\n\n');
 
+  const urls = evidence.map((result) => String(result.url ?? '')).filter(Boolean);
+  const websiteCandidate = urls.find((url) => !isSocialOrProfileUrl(url) && !isContactPageUrl(url)) ?? '';
+
   return {
     email: extractEmails(text)[0] ?? '',
     phone: extractPhones(text)[0] ?? '',
+    contactPageUrl: urls.find(isContactPageUrl) ?? '',
+    linkedinUrl: urls.find(isLinkedInCompanyUrl) ?? '',
+    website: websiteCandidate,
     foundContactEvidence: evidence.length > 0,
   };
 }
@@ -238,12 +257,18 @@ function publicContactFromEvidence(lead: Record<string, unknown>, results: Array
 function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[], fallbackRadius: number | null, results: Array<Record<string, unknown>>) {
   const publicContact = publicContactFromEvidence(lead, results);
   const email = publicContact.email;
-  const phone = typeof lead.phone === 'string' && lead.phone.replace(/\D/g, '').length >= 9 ? lead.phone : publicContact.phone;
-  const website = typeof lead.website === 'string' && !isSocialOrProfileUrl(lead.website) ? lead.website : '';
+  const phone = typeof lead.phone === 'string' && isLikelyAustralianPhone(lead.phone) ? lead.phone : publicContact.phone;
+  const leadWebsite = typeof lead.website === 'string' && !isSocialOrProfileUrl(lead.website) ? lead.website : '';
+  const leadWebsiteDomain = normaliseDomain(leadWebsite);
+  const website = leadWebsite && publicContact.foundContactEvidence && publicContact.website.includes(leadWebsiteDomain) ? leadWebsite : publicContact.website;
+  const leadContactPageUrl = typeof lead.contactPageUrl === 'string' && isContactPageUrl(lead.contactPageUrl) ? lead.contactPageUrl : '';
+  const leadLinkedinUrl = typeof lead.linkedinUrl === 'string' && isLinkedInCompanyUrl(lead.linkedinUrl) ? lead.linkedinUrl : '';
+  const contactPageUrl = leadContactPageUrl || publicContact.contactPageUrl;
+  const linkedinUrl = leadLinkedinUrl || publicContact.linkedinUrl;
   const notes = typeof lead.notes === 'string' ? lead.notes : '';
   const contactNote = email
     ? 'Public email found and needs human verification before sending.'
-    : 'No public email was found in the searched sources; verify the website/contact page manually before sending.';
+    : 'No public email was found in the searched sources; use the saved contact page, phone or LinkedIn/company page for manual outreach.';
 
   return {
     ...lead,
@@ -261,11 +286,13 @@ function sanitiseLead(lead: Record<string, unknown>, categories: LeadCategory[],
     contactRole: typeof lead.contactRole === 'string' ? lead.contactRole : decisionMakerGuide[closestCategory(lead.category, categories)].split(': ')[1]?.split('.')[0] ?? '',
     email,
     phone,
+    contactPageUrl,
+    linkedinUrl,
     businessNeeds: stringArray(lead.businessNeeds),
     servicesOffered: stringArray(lead.servicesOffered),
     concerns: stringArray(lead.concerns),
     needs: stringArray(lead.needs),
-    notes: [notes, contactNote].filter(Boolean).join(' '),
+    notes: [notes, contactNote, contactPageUrl ? `Contact page: ${contactPageUrl}` : '', linkedinUrl ? `LinkedIn/company page: ${linkedinUrl}` : ''].filter(Boolean).join(' '),
     lastContactedAt: typeof lead.lastContactedAt === 'string' ? lead.lastContactedAt : null,
   };
 }
@@ -457,7 +484,7 @@ For each candidate, explain:
 - the main person or role Paracare should contact to get referral/client conversations
 - why that role matters for NDIS, Home Care Packages, aged care, GP or allied-health referrals
 - public phone/email/website/LinkedIn evidence found, if available
-- services offered, ideal client fit, likely needs, commercial fit, concerns, outreach angle, suitability score, and the reason they may benefit from Paracare
+- services offered, ideal client fit, likely needs, commercial fit, concerns, outreach angle, suitability score, contact page URL, LinkedIn/company page if available, and the reason they may benefit from Paracare
 
 Prioritise businesses with a direct pathway to referrals or client introductions. Prefer organisations with public contact details, clear local presence, and client groups likely to need proactive wellness monitoring, systems-based health reviews, trend monitoring, deterioration recognition, family visibility, post-discharge oversight, escalation recommendations, complex disability support or high-needs community oversight.
 
@@ -491,7 +518,10 @@ Email/phone rules:
 - Prefer direct organisation emails from the organisation's own website or contact page.
 - Generic public inboxes like admin@, info@, referrals@, intake@ or hello@ are acceptable if public.
 - Never invent an email. If no email is public, leave email empty and explain that it needs manual verification in notes.
+- If no public email exists, still return and save the lead when otherwise suitable. Include contactPageUrl, phone and linkedinUrl when available.
 - Never use a personal LinkedIn profile as the organisation website.
+- The linkedinUrl field must be a LinkedIn company page, not a personal profile. If only a personal profile is available, leave linkedinUrl empty.
+- The contactPageUrl field must be a contact, referral, enquiry, intake or get-in-touch page. Do not use a homepage as contactPageUrl unless the homepage is clearly the contact page.
 - Never use a personal LinkedIn profile as proof of an email address or phone number.`,
           },
           {
@@ -525,7 +555,7 @@ Email/phone rules:
                   items: {
                     type: 'object',
                     additionalProperties: false,
-                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'servicesOffered', 'concerns', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
+                    required: ['organisation', 'category', 'website', 'location', 'suburb', 'postcode', 'region', 'radiusKm', 'contactName', 'contactRole', 'email', 'phone', 'contactPageUrl', 'linkedinUrl', 'status', 'likelihood', 'fitSummary', 'suitabilitySummary', 'businessNeeds', 'servicesOffered', 'concerns', 'outreachAngle', 'researchConfidence', 'needs', 'source', 'nextAction', 'notes', 'lastContactedAt'],
                     properties: {
                       organisation: { type: 'string' },
                       category: { type: 'string', enum: categories },
@@ -539,6 +569,8 @@ Email/phone rules:
                       contactRole: { type: 'string' },
                       email: { type: 'string' },
                       phone: { type: 'string' },
+                      contactPageUrl: { type: 'string' },
+                      linkedinUrl: { type: 'string' },
                       status: { type: 'string', enum: ['qualified'] },
                       likelihood: { type: 'number' },
                       fitSummary: { type: 'string' },

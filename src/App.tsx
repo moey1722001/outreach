@@ -114,6 +114,8 @@ const emptyLead: LeadFormInput = {
   contactRole: '',
   email: '',
   phone: '',
+  contactPageUrl: '',
+  linkedinUrl: '',
   status: 'new',
   fitSummary: '',
   suitabilitySummary: '',
@@ -370,6 +372,8 @@ export default function App() {
       contactRole: lead.contactRole,
       email: lead.email,
       phone: lead.phone,
+      contactPageUrl: lead.contactPageUrl,
+      linkedinUrl: lead.linkedinUrl,
       status: lead.status,
       likelihood: lead.likelihood,
       fitSummary: lead.fitSummary,
@@ -456,7 +460,7 @@ export default function App() {
 
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex min-h-14 items-center justify-between gap-3 px-4 sm:min-h-16 sm:px-6 lg:px-8">
             <div>
               <h1 className="text-lg font-semibold tracking-tight">{pageTitle(page)}</h1>
               <p className="hidden text-sm text-slate-500 sm:block">{pageDescription(page)}</p>
@@ -604,7 +608,7 @@ function Sidebar({ page, onPageChange, onSignOut, showSignOut }: { page: AppPage
 
 function MobileNav({ page, onPageChange }: { page: AppPage; onPageChange: (page: AppPage) => void }) {
   return (
-    <nav className="mobile-nav-shell lg:hidden">
+    <nav className="mobile-nav-shell lg:hidden" aria-label="Mobile sections">
       {navItems.map((item) => (
         <button key={item.page} className={`mobile-nav-link ${page === item.page ? 'mobile-nav-link-active' : ''}`} onClick={() => onPageChange(item.page)}>
           {item.icon}
@@ -661,8 +665,8 @@ function LeadsPage({
   onDelete: (lead: Lead) => void;
 }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
-      <aside className="space-y-4">
+    <div className="leads-layout grid gap-5 xl:grid-cols-[340px_1fr]">
+      <aside className="leads-list-panel space-y-4">
         <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold">Lead cards</h2>
@@ -696,29 +700,31 @@ function LeadsPage({
         </div>
       </aside>
 
-      {showLeadForm ? (
-        <LeadForm
-          form={form}
-          editing={editing}
-          needInput={needInput}
-          busy={busy}
-          duplicateMatches={duplicateMatches}
-          onSubmit={onSubmitLead}
-          onCancel={onCancelLead}
-          onNeedInputChange={onNeedInputChange}
-          onFormChange={onFormChange}
-        />
-      ) : (
-        <LeadReviewPanel
-          lead={selectedLead}
-          duplicateMatches={selectedDuplicates}
-          onEdit={onEdit}
-          onGenerate={onGenerate}
-          onStatusChange={onStatusChange}
-          onDelete={onDelete}
-          busy={busy}
-        />
-      )}
+      <div className="lead-detail-panel">
+        {showLeadForm ? (
+          <LeadForm
+            form={form}
+            editing={editing}
+            needInput={needInput}
+            busy={busy}
+            duplicateMatches={duplicateMatches}
+            onSubmit={onSubmitLead}
+            onCancel={onCancelLead}
+            onNeedInputChange={onNeedInputChange}
+            onFormChange={onFormChange}
+          />
+        ) : (
+          <LeadReviewPanel
+            lead={selectedLead}
+            duplicateMatches={selectedDuplicates}
+            onEdit={onEdit}
+            onGenerate={onGenerate}
+            onStatusChange={onStatusChange}
+            onDelete={onDelete}
+            busy={busy}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -737,14 +743,14 @@ function DiscoverPanel({
   onDiscover: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="app-card rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-2 border-b border-slate-100 pb-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-sky-700">
           <Sparkles size={18} />
           Area research autopilot
         </div>
         <h2 className="text-2xl font-semibold tracking-tight">Set the area, then let the app research</h2>
-        <p className="text-sm leading-6 text-slate-600">The assistant searches the area, gathers candidate information, ranks suitability, generates draft emails, and saves only non-duplicate leads for human review.</p>
+        <p className="hidden text-sm leading-6 text-slate-600 sm:block">The assistant searches the area, gathers candidate information, ranks suitability, generates draft emails, and saves only non-duplicate leads for human review.</p>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-5">
@@ -800,7 +806,7 @@ function DiscoverPanel({
         </div>
       </div>
 
-      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="mt-5 hidden rounded-lg border border-slate-200 bg-slate-50 p-4 sm:block">
         <span className="label">Who the app will look for</span>
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
           {brief.categories.map((category) => (
@@ -815,7 +821,7 @@ function DiscoverPanel({
 
       <div className="mt-5 flex justify-end">
         <button onClick={onDiscover} disabled={busy || brief.categories.length === 0} className="button-primary">
-          Research and draft {brief.leadCount} leads
+          Find {brief.leadCount} leads
           <ArrowRight size={17} />
         </button>
       </div>
@@ -882,7 +888,7 @@ function LeadReviewPanel({
 
       <div className="mt-5 grid gap-3 md:grid-cols-3">
         <Info icon={<UserRound size={17} />} label="Person to reach" value={[lead.contactName, lead.contactRole].filter(Boolean).join(' · ') || decisionMakerGuide[lead.category].primary} />
-        <Info icon={<Mail size={17} />} label="Email" value={lead.email || 'Needs verification'} />
+        <Info icon={<Mail size={17} />} label="Email" value={lead.email || lead.contactPageUrl || lead.linkedinUrl || 'Needs verification'} />
         <Info icon={<MapPin size={17} />} label="Area" value={[lead.suburb, lead.postcode, lead.region, lead.radiusKm ? `${lead.radiusKm}km` : ''].filter(Boolean).join(' · ') || lead.location || 'Not set'} />
       </div>
 
@@ -892,6 +898,13 @@ function LeadReviewPanel({
           Contact {lead.contactName ? lead.contactName : `the ${lead.contactRole || decisionMakerGuide[lead.category].primary}`} because {decisionMakerGuide[lead.category].reason.toLowerCase()}
         </p>
         <p className="mt-2 text-sm leading-6 text-slate-600">{lead.notes || lead.nextAction || 'The app will use public website, search and LinkedIn signals where available to verify the best contact path.'}</p>
+        {(lead.contactPageUrl || lead.linkedinUrl || lead.phone) && (
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+            {lead.contactPageUrl && <a className="rounded-full bg-slate-50 px-3 py-1 text-sky-700 ring-1 ring-slate-200" href={lead.contactPageUrl} target="_blank" rel="noreferrer">Contact page</a>}
+            {lead.linkedinUrl && <a className="rounded-full bg-slate-50 px-3 py-1 text-sky-700 ring-1 ring-slate-200" href={lead.linkedinUrl} target="_blank" rel="noreferrer">LinkedIn/company</a>}
+            {lead.phone && <span className="rounded-full bg-slate-50 px-3 py-1 text-slate-700 ring-1 ring-slate-200">{lead.phone}</span>}
+          </div>
+        )}
       </div>
 
       <div className="mt-5 rounded-lg border border-sky-100 bg-sky-50 p-4">
@@ -991,6 +1004,8 @@ function LeadForm({
         <Field label="Role or position" value={form.contactRole} onChange={(value) => onFormChange({ ...form, contactRole: value })} />
         <Field label="Email" value={form.email} onChange={(value) => onFormChange({ ...form, email: value })} />
         <Field label="Phone" value={form.phone} onChange={(value) => onFormChange({ ...form, phone: value })} />
+        <Field label="Contact page" value={form.contactPageUrl} onChange={(value) => onFormChange({ ...form, contactPageUrl: value })} />
+        <Field label="LinkedIn/company page" value={form.linkedinUrl} onChange={(value) => onFormChange({ ...form, linkedinUrl: value })} />
       </div>
       <label className="mt-3 block">
         <span className="label">Opportunity tags</span>

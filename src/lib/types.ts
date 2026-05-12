@@ -71,6 +71,8 @@ export interface Lead {
   contactRole: string;
   email: string;
   phone: string;
+  contactPageUrl: string;
+  linkedinUrl: string;
   status: LeadStatus;
   likelihood: number;
   fitSummary: string;

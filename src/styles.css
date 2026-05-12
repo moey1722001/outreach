@@ -114,8 +114,13 @@ button:disabled {
   gap: 0.5rem;
   overflow-x: auto;
   border-top: 1px solid #e2e8f0;
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 1rem 0.55rem;
   background: rgba(255, 255, 255, 0.98);
+  scrollbar-width: none;
+}
+
+.mobile-nav-shell::-webkit-scrollbar {
+  display: none;
 }
 
 .sidebar-link,
@@ -300,7 +305,7 @@ button:disabled {
 
 @media (max-width: 640px) {
   body {
-    padding-bottom: 4.25rem;
+    padding-bottom: 0;
   }
 
   input,
@@ -322,22 +327,21 @@ button:disabled {
   }
 
   .mobile-nav-shell {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 40;
-    justify-content: space-around;
-    box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+    position: sticky;
+    top: 3.5rem;
+    z-index: 30;
+    justify-content: flex-start;
+    border-top: 0;
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
   }
 
   .mobile-nav-link {
-    flex: 1 1 0;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.45rem 0.3rem;
-    font-size: 0.72rem;
+    flex: 0 0 auto;
+    min-width: max-content;
+    gap: 0.35rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.76rem;
   }
 
   .mobile-nav-link svg {
@@ -347,5 +351,57 @@ button:disabled {
 
   .lead-row {
     align-items: flex-start;
+  }
+
+  .app-card,
+  .lead-detail-panel > *,
+  .leads-list-panel > div:first-child {
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .leads-layout {
+    gap: 0.85rem;
+  }
+
+  .leads-list-panel {
+    max-height: none;
+  }
+
+  .leads-list-panel > .space-y-2,
+  .leads-list-panel > div:last-child {
+    display: grid;
+    grid-auto-columns: minmax(15rem, 82vw);
+    grid-auto-flow: column;
+    gap: 0.65rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .leads-list-panel > .space-y-2::-webkit-scrollbar,
+  .leads-list-panel > div:last-child::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lead-row {
+    min-height: 4.5rem;
+    scroll-snap-align: start;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+    line-height: 1.65rem !important;
+  }
+
+  .select-tile {
+    min-height: 2.6rem;
+    padding: 0.65rem;
+    font-size: 0.82rem;
   }
 }
