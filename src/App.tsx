@@ -16,11 +16,12 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   UserRound,
   Users,
 } from 'lucide-react';
 import type { Session } from '@supabase/supabase-js';
-import { discoverLeads, generateEmail, listLeads, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
+import { deleteLead, discoverLeads, generateEmail, listLeads, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
 import { findDuplicateMatches, hasPriorOutreach } from './lib/duplicates';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
@@ -299,6 +300,24 @@ export default function App() {
     setLeads((items) => items.map((item) => (item.id === updated.id ? updated : item)));
   }
 
+  async function handleDeleteLead(lead: Lead) {
+    if (!window.confirm(`Delete ${lead.organisation}? This removes the lead, draft emails and contact history from Outreach.`)) return;
+
+    setBusy('Deleting lead');
+    setError('');
+    try {
+      await deleteLead(lead.id);
+      setDraft(null);
+      const next = leads.filter((item) => item.id !== lead.id);
+      setLeads(next);
+      setSelectedId(next[0]?.id ?? null);
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete lead.'));
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function handleMarkEmailSent(lead: Lead, contactedBy: string) {
     if ((hasPriorOutreach(lead) || selectedDuplicates.some((match) => match.lastContactedAt)) && !window.confirm('This organisation or matching contact has previous outreach history. Mark another email as sent anyway?')) {
       return;
@@ -423,7 +442,9 @@ export default function App() {
               <p className="hidden text-sm text-slate-500 sm:block">{pageDescription(page)}</p>
             </div>
             <div className="flex items-center gap-2">
-              <StatusPill active={isSupabaseConfigured} />
+              <div className="hidden sm:block">
+                <StatusPill active={isSupabaseConfigured} />
+              </div>
               {session && (
                 <button className="button-secondary lg:hidden" onClick={() => supabase?.auth.signOut()} aria-label="Sign out">
                   <LogOut size={17} />
@@ -463,6 +484,7 @@ export default function App() {
               onEdit={editLead}
               onGenerate={handleGenerateEmail}
               onStatusChange={handleStatusChange}
+              onDelete={handleDeleteLead}
             />
           )}
 
@@ -562,7 +584,7 @@ function Sidebar({ page, onPageChange, onSignOut, showSignOut }: { page: AppPage
 
 function MobileNav({ page, onPageChange }: { page: AppPage; onPageChange: (page: AppPage) => void }) {
   return (
-    <nav className="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden">
+    <nav className="mobile-nav-shell lg:hidden">
       {navItems.map((item) => (
         <button key={item.page} className={`mobile-nav-link ${page === item.page ? 'mobile-nav-link-active' : ''}`} onClick={() => onPageChange(item.page)}>
           {item.icon}
@@ -594,6 +616,7 @@ function LeadsPage({
   onEdit,
   onGenerate,
   onStatusChange,
+  onDelete,
 }: {
   leads: Lead[];
   selectedLead: Lead | null;
@@ -615,6 +638,7 @@ function LeadsPage({
   onEdit: (lead: Lead) => void;
   onGenerate: () => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
+  onDelete: (lead: Lead) => void;
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
@@ -669,6 +693,7 @@ function LeadsPage({
           onEdit={onEdit}
           onGenerate={onGenerate}
           onStatusChange={onStatusChange}
+          onDelete={onDelete}
           busy={busy}
         />
       )}
@@ -783,6 +808,7 @@ function LeadReviewPanel({
   onEdit,
   onGenerate,
   onStatusChange,
+  onDelete,
 }: {
   lead: Lead | null;
   duplicateMatches: DuplicateMatch[];
@@ -790,6 +816,7 @@ function LeadReviewPanel({
   onEdit: (lead: Lead) => void;
   onGenerate: () => void;
   onStatusChange: (lead: Lead, status: LeadStatus) => void;
+  onDelete: (lead: Lead) => void;
 }) {
   if (!lead) {
     return (
@@ -819,6 +846,10 @@ function LeadReviewPanel({
           <button className="button-secondary" onClick={() => onEdit(lead)}>
             <Edit3 size={17} />
             Edit
+          </button>
+          <button className="button-danger" onClick={() => onDelete(lead)}>
+            <Trash2 size={17} />
+            Delete
           </button>
           <button className="button-primary" onClick={onGenerate} disabled={busy}>
             <Sparkles size={17} />

@@ -63,7 +63,8 @@ button:disabled {
 }
 
 .button-primary,
-.button-secondary {
+.button-secondary,
+.button-danger {
   display: inline-flex;
   min-height: 2.5rem;
   align-items: center;
@@ -95,6 +96,26 @@ button:disabled {
 .button-secondary:hover {
   border-color: #94a3b8;
   background: #f8fafc;
+}
+
+.button-danger {
+  border: 1px solid #fecaca;
+  background: #ffffff;
+  color: #b91c1c;
+}
+
+.button-danger:hover {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.mobile-nav-shell {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  border-top: 1px solid #e2e8f0;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .sidebar-link,
@@ -278,9 +299,53 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  body {
+    padding-bottom: 4.25rem;
+  }
+
   input,
   select,
   textarea {
     font-size: 16px;
+  }
+
+  .input,
+  .textarea {
+    padding: 0.75rem;
+  }
+
+  .button-primary,
+  .button-secondary,
+  .button-danger {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+
+  .mobile-nav-shell {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    justify-content: space-around;
+    box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+  }
+
+  .mobile-nav-link {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.45rem 0.3rem;
+    font-size: 0.72rem;
+  }
+
+  .mobile-nav-link svg {
+    height: 1rem;
+    width: 1rem;
+  }
+
+  .lead-row {
+    align-items: flex-start;
   }
 }

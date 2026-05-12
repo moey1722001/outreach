@@ -288,6 +288,16 @@ export async function updateLeadStatus(lead: Lead, status: Lead['status']): Prom
   return saveLead({ ...lead, status, likelihood: lead.likelihood }, lead.id);
 }
 
+export async function deleteLead(leadId: string): Promise<void> {
+  if (!supabase) {
+    writeLocalLeads(readLocalLeads().filter((lead) => lead.id !== leadId));
+    return;
+  }
+
+  const { error } = await supabase.from('outreach_leads').delete().eq('id', leadId);
+  if (error) throw error;
+}
+
 export async function logContact(lead: Lead, event: Omit<ContactEvent, 'id' | 'leadId' | 'createdAt'>): Promise<Lead> {
   const contactEvent: ContactEvent = {
     ...event,

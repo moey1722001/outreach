@@ -81,12 +81,16 @@ function cleanDraft(draft: { subject?: unknown; body?: unknown }) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  if (!/kind regards|warm regards|thanks/i.test(body)) {
-    body = `${body}\n\nKind regards,\nParacare`;
-  }
+  body = body
+    .replace(/\n?\[Your Name\]\n?/gi, '\nParacare\n')
+    .replace(/\n?\[Your Position\]\n?/gi, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
-  if (!/paracare/i.test(body)) {
+  if (!/(kind regards|warm regards)\s*,?\s*\n/i.test(body)) {
     body = `${body}\n\nKind regards,\nParacare`;
+  } else if (!/(kind regards|warm regards)[\s\S]*paracare/i.test(body)) {
+    body = `${body}\nParacare`;
   }
 
   return { subject, body };
@@ -118,7 +122,16 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: `You write ethical, high-response B2B outreach emails for Paracare, an Australian in-home clinical care provider.
+            content: `You write ethical, high-response B2B outreach emails for Paracare, an Australian in-home clinical care provider with a care coordination app.
+
+Paracare in one sentence:
+Paracare helps people receive reliable clinical support at home while giving coordinators, families and care teams clearer visibility over visits, notes, changes, escalation and follow-up through the Paracare app.
+
+What matters about the Paracare app:
+- It gives referrers and care stakeholders clearer communication after visits.
+- It helps reduce uncertainty for families and coordinators by keeping care notes, updates and follow-up visible.
+- It supports nursing oversight, escalation, documentation and continuity between home visits.
+- It is useful for NDIS participants, Home Care Package clients, aged-care clients and people transitioning home after hospital.
 
 Write every email as a fresh, human-reviewed first email. It must not sound like a generic cold email.
 
@@ -126,15 +139,23 @@ Rules:
 - Use the organisation's actual services, likely client group, contact role, public facts, suitability summary, concerns and outreach angle.
 - If a named person exists, write to that person. Otherwise write naturally to the role/team.
 - Lead with a specific reason for contacting them, not a generic introduction.
-- Keep it short: 120-170 words unless concise mode is requested.
+- Keep it short: 150-210 words unless concise mode is requested.
 - Use plain language, clinical credibility, and a calm helpful tone.
-- Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, or post-discharge/complex-care support.
+- Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, post-discharge support, or complex-care support.
+- Explain Paracare and the app in one useful sentence. Do not make the app sound like a generic portal or software pitch.
 - Ask for a low-friction next step, usually a brief call or the right person to speak with.
 - Avoid hype, pressure, fake familiarity, exaggerated claims, spammy subject lines, and "I hope this email finds you well".
 - Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "become a dependable partner", "looking forward to your response".
 - Subject line must be plain, specific and under 8 words.
+- Never include placeholders like [Your Name], [Your Position], [Company Name] or [Phone].
 - Never claim an existing partnership, endorsement or referral relationship.
 - If evidence is weak, acknowledge it gently and ask to be pointed to the right person.
+
+Structure:
+1. Specific observation about their organisation or client group.
+2. Why Paracare is relevant, including the app's communication/visibility value.
+3. Concrete use case for their clients.
+4. One simple CTA.
 
 Marketing basis: favour buying-group relevance over over-personalising to one individual; help the recipient quickly understand why this matters to their organisation and clients.`,
           },
