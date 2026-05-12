@@ -81,6 +81,10 @@ function cleanDraft(draft: { subject?: unknown; body?: unknown }) {
     .replace(/\bgeneric support workers?\b/gi, 'clinical monitoring team')
     .replace(/\btrusted provider\b/gi, 'in-home clinical support team')
     .replace(/\bleading provider\b/gi, 'in-home clinical support team')
+    .replace(/\bI wanted to reach out\b/gi, 'I noticed your work')
+    .replace(/\bI am reaching out\b/gi, 'I noticed your work')
+    .replace(/\bwe would love to\b/gi, 'it may be worth')
+    .replace(/\bpartner with you\b/gi, 'explore whether Paracare could complement your existing supports')
     .replace(/\bbecome a dependable partner\b/gi, 'be useful for future client referrals')
     .replace(/\bLooking forward to your response\.?/gi, 'Thanks for considering it.')
     .replace(/\n{3,}/g, '\n\n')
@@ -167,10 +171,19 @@ Commercial awareness:
 
 Write every email as a fresh, human-reviewed first email. It must not sound like a generic cold email.
 
+Personalisation requirements:
+- Every email must clearly include why this organisation was selected.
+- Include one relevant observation about their services or likely client group, such as SIL support for high-needs participants, retirement living for ageing residents, neurological or ABI supports, complex community supports, hospital transition work or community wellness.
+- Explain why Paracare may complement their existing supports rather than replace them.
+- Include a concise explanation of Paracare's value in plain language.
+- Sound consultative and relationship-focused, not sales-focused. The aim is to open a useful conversation, not pitch hard.
+- If the lead data is thin, use cautious wording like "it looked like", "it may be relevant", or "if this sits with your team" rather than pretending certainty.
+- The opening sentence should use a natural selection cue such as "I noticed...", "I selected...", "Your work with...", or "Given your focus on..." followed by the specific service/client-group observation.
+
 Rules:
 - Use the organisation's actual services, likely client group, contact role, public facts, suitability summary, concerns and outreach angle.
 - If a named person exists, write to that person. Otherwise write naturally to the role/team.
-- Lead with a specific reason for contacting them, not a generic introduction.
+- Lead with a specific reason for contacting them, not a generic introduction. The first paragraph must answer "why you were selected".
 - Keep it short: 150-210 words unless concise mode is requested.
 - Use plain language, clinical credibility, and a calm helpful tone.
 - Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, post-discharge support, or complex-care support.
@@ -180,20 +193,20 @@ Rules:
 - Use the terms "wellness monitoring", "clinical monitoring", "trend reporting", "family visibility", "post-discharge oversight" or "escalation recommendations" only where they fit the lead.
 - Do not overclaim hospital reduction. You may say Paracare can support early recognition and reduce avoidable hospital presentations where appropriate.
 - Ask for a low-friction next step, usually a brief call or the right person to speak with.
-- Avoid hype, pressure, fake familiarity, exaggerated claims, spammy subject lines, and "I hope this email finds you well".
-- Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "become a dependable partner", "looking forward to your response", "hospital replacement", "ambulance replacement", "emergency service", "acute care provider", "generic support workers".
+- Avoid hype, pressure, fake familiarity, exaggerated claims, spammy subject lines, mass-email wording, and "I hope this email finds you well".
+- Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "I wanted to reach out", "I am reaching out", "we would love to partner", "become a dependable partner", "looking forward to your response", "hospital replacement", "ambulance replacement", "emergency service", "acute care provider", "generic support workers".
 - Subject line must be plain, specific and under 8 words.
 - Never include placeholders like [Your Name], [Your Position], [Company Name] or [Phone].
 - Never claim an existing partnership, endorsement or referral relationship.
 - If evidence is weak, acknowledge it gently and ask to be pointed to the right person.
 
 Structure:
-1. Specific observation about their organisation or client group.
-2. Why Paracare is relevant, including the app's communication/visibility value.
-3. Concrete use case for their clients.
-4. One simple CTA.
+1. Why they were selected, with a specific observation about their organisation or client group.
+2. Why Paracare may complement their existing supports, including the app's communication/visibility value.
+3. Concrete use case for higher-needs clients they likely support.
+4. One simple, relationship-focused CTA.
 
-Marketing basis: favour buying-group relevance over over-personalising to one individual; help the recipient quickly understand why this matters to their organisation and clients.`,
+Marketing basis: favour buying-group relevance over over-personalising to one individual; help the recipient quickly understand why this matters to their organisation and clients. The email should read like a thoughtful referral-pathway introduction from a clinical service, not an automated campaign.`,
           },
           {
             role: 'user',
