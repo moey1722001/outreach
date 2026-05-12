@@ -24,7 +24,7 @@ import type { Session } from '@supabase/supabase-js';
 import { deleteLead, discoverLeads, generateEmail, listLeads, markLatestEmailSent, saveLead, updateLeadStatus } from './lib/data';
 import { findDuplicateMatches, hasPriorOutreach } from './lib/duplicates';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
-import { likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
+import { leadScoreOutOfTen, likelihoodClass, likelihoodLabel, scoreLead } from './lib/scoring';
 import type { DraftEmail, DuplicateMatch, Lead, LeadCategory, LeadFormInput, LeadStatus, ModelMode, OutreachTone, SearchBrief } from './lib/types';
 
 type AppPage = 'finder' | 'leads' | 'drafts' | 'followups';
@@ -34,6 +34,9 @@ const categories: LeadCategory[] = [
   'Home Care Package provider',
   'Retirement village',
   'Aged care provider',
+  'SIL provider',
+  'Community nursing provider',
+  'Hospital discharge planner',
   'GP clinic',
   'Allied health provider',
 ];
@@ -71,13 +74,25 @@ const decisionMakerGuide: Record<LeadCategory, { primary: string; reason: string
     primary: 'Facility Manager, General Manager, Clinical Care Manager, Admissions or Home Care Manager',
     reason: 'They influence family enquiries, transitions of care and extra clinical support pathways.',
   },
+  'SIL provider': {
+    primary: 'SIL Manager, Operations Manager, House Manager, Support Coordination Lead, Director',
+    reason: 'They support NDIS participants with complex daily needs and often need clinical visibility, escalation support and family reassurance.',
+  },
+  'Community nursing provider': {
+    primary: 'Clinical Coordinator, Nursing Manager, Care Manager, Intake Manager, Director',
+    reason: 'They manage community clients who may need structured monitoring, trend reporting and extra post-discharge oversight.',
+  },
+  'Hospital discharge planner': {
+    primary: 'Discharge Planner, NUM, Transitional Care Coordinator, Social Worker, Care Navigation Lead',
+    reason: 'They help people return home safely and can identify clients needing proactive monitoring after discharge.',
+  },
   'GP clinic': {
     primary: 'Practice Manager, Nurse Manager, Principal GP, Practice Owner',
-    reason: 'They manage referral pathways for wound care, chronic disease, medication and home nursing support.',
+    reason: 'They manage referral pathways for chronic disease clients, falls risk, post-discharge concerns and added clinical oversight.',
   },
   'Allied health provider': {
     primary: 'Practice Manager, Principal Clinician, Director, Referral Coordinator',
-    reason: 'They see clients who may need complementary nursing, care coordination or home visit support.',
+    reason: 'They see high-needs clients who may benefit from clinical monitoring, family visibility and escalation recommendations.',
   },
 };
 
@@ -134,8 +149,8 @@ export default function App() {
     region: 'Sydney',
     radiusKm: 10,
     leadCount: 10,
-    categories: ['NDIS support coordinator', 'Home Care Package provider', 'GP clinic'],
-    notes: 'Prioritise organisations likely to refer clients who need in-home nursing and responsive escalation.',
+    categories: ['NDIS support coordinator', 'Home Care Package provider', 'SIL provider'],
+    notes: 'Prioritise high-needs community clients, SIL homes, older clients, post-discharge clients, falls-risk clients, ABI/neuro clients and chronic disease clients who may benefit from paramedic-led wellness and clinical monitoring.',
     modelMode: 'save_tokens',
   });
   const [draft, setDraft] = useState<DraftEmail | null>(null);
@@ -667,7 +682,9 @@ function LeadsPage({
                   {lead.suburb || lead.location || lead.category}
                 </div>
               </div>
-              <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>{lead.likelihood}%</span>
+              <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>
+                {leadScoreOutOfTen(lead.likelihood)}/10
+              </span>
             </button>
           ))}
           {leads.length === 0 && <div className="rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500">No leads in this queue.</div>}
@@ -836,7 +853,7 @@ function LeadReviewPanel({
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">{lead.category}</span>
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${likelihoodClass(lead.likelihood)}`}>
-              {likelihoodLabel(lead.likelihood)} fit · {lead.likelihood}%
+              {likelihoodLabel(lead.likelihood)} fit · {leadScoreOutOfTen(lead.likelihood)}/10
             </span>
           </div>
           <h2 className="text-2xl font-semibold tracking-tight">{lead.organisation}</h2>
@@ -879,7 +896,7 @@ function LeadReviewPanel({
             <p className="mt-2 text-sm leading-6 text-slate-700">{lead.suitabilitySummary || lead.fitSummary || 'No autonomous suitability brief has been saved for this lead yet.'}</p>
           </div>
           <span className="shrink-0 rounded-full border border-sky-200 bg-white px-3 py-1 text-xs font-semibold text-sky-700">
-            Confidence {lead.researchConfidence || lead.likelihood}%
+            Lead score {leadScoreOutOfTen(lead.likelihood)}/10
           </span>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-2">

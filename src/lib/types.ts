@@ -3,6 +3,9 @@ export type LeadCategory =
   | 'Home Care Package provider'
   | 'Retirement village'
   | 'Aged care provider'
+  | 'SIL provider'
+  | 'Community nursing provider'
+  | 'Hospital discharge planner'
   | 'GP clinic'
   | 'Allied health provider';
 

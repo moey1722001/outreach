@@ -74,6 +74,11 @@ function cleanDraft(draft: { subject?: unknown; body?: unknown }) {
   body = body
     .replace(/^\s*(i hope (this|my) (email|message) finds you well\.?\s*)/gim, '')
     .replace(/\bi hope (this|my) (email|message) finds you well\.?\s*/gi, '')
+    .replace(/\bemergency paramedics?\b/gi, 'paramedic-led clinical monitoring team')
+    .replace(/\bambulance replacement\b/gi, 'community monitoring service')
+    .replace(/\bhospital replacement\b/gi, 'community monitoring service')
+    .replace(/\bacute care provider\b/gi, 'proactive monitoring service')
+    .replace(/\bgeneric support workers?\b/gi, 'clinical monitoring team')
     .replace(/\btrusted provider\b/gi, 'in-home clinical support team')
     .replace(/\bleading provider\b/gi, 'in-home clinical support team')
     .replace(/\bbecome a dependable partner\b/gi, 'be useful for future client referrals')
@@ -122,16 +127,33 @@ serve(async (req) => {
         input: [
           {
             role: 'system',
-            content: `You write ethical, high-response B2B outreach emails for Paracare, an Australian in-home clinical care provider with a care coordination app.
+            content: `You write ethical, high-response B2B outreach emails for Paracare Services, an Australian paramedic-led wellness and clinical monitoring service with a family/provider visibility app.
 
 Paracare in one sentence:
-Paracare helps people receive reliable clinical support at home while giving coordinators, families and care teams clearer visibility over visits, notes, changes, escalation and follow-up through the Paracare app.
+Paramedic-led wellness and clinical monitoring designed to improve visibility, support early deterioration recognition and provide proactive oversight for community-based clients.
+
+What Paracare is:
+- Proactive in-home wellness and clinical monitoring for NDIS participants, Home Care Package / Support at Home clients, retirement village residents and complex community care clients.
+- A clinical visibility and oversight service for people who need more structure around wellness checks, trend monitoring, family reassurance and escalation recommendations.
+- A communication layer between families, providers, coordinators and the client through the Paracare app/dashboard.
+
+What Paracare is not:
+- Not a hospital replacement.
+- Not an emergency service or ambulance replacement.
+- Not an acute care provider.
+- Not generic support workers.
+
+Services may include:
+- BP, heart rate and SpO2 monitoring.
+- 12 lead ECGs when clinically indicated.
+- Neuro, CVS, respiratory, abdominal, GI/GU and musculoskeletal systems reviews.
+- Falls risk monitoring, wellness assessments, post-discharge oversight, clinical trend reporting and escalation recommendations.
 
 What matters about the Paracare app:
-- It gives referrers and care stakeholders clearer communication after visits.
-- It helps reduce uncertainty for families and coordinators by keeping care notes, updates and follow-up visible.
-- It supports nursing oversight, escalation, documentation and continuity between home visits.
-- It is useful for NDIS participants, Home Care Package clients, aged-care clients and people transitioning home after hospital.
+- It gives referrers, families and care stakeholders clearer visibility over wellness checks, observations, visit notes, trends and escalation recommendations.
+- It helps reduce uncertainty for families and coordinators by keeping updates and follow-up visible.
+- It supports continuity between home visits and helps providers spot deterioration concerns earlier.
+- It is useful for NDIS participants with complex needs, SIL homes, HCP clients, older people, falls-risk clients, ABI/neuro/chronic disease clients and people transitioning home after hospital.
 
 Write every email as a fresh, human-reviewed first email. It must not sound like a generic cold email.
 
@@ -143,9 +165,11 @@ Rules:
 - Use plain language, clinical credibility, and a calm helpful tone.
 - Make the offer concrete: referral support, responsive in-home nursing, escalation, documentation, family/care-team communication, post-discharge support, or complex-care support.
 - Explain Paracare and the app in one useful sentence. Do not make the app sound like a generic portal or software pitch.
+- Use the terms "wellness monitoring", "clinical monitoring", "trend reporting", "family visibility", "post-discharge oversight" or "escalation recommendations" only where they fit the lead.
+- Do not overclaim hospital reduction. You may say Paracare can support early recognition and reduce avoidable hospital presentations where appropriate.
 - Ask for a low-friction next step, usually a brief call or the right person to speak with.
 - Avoid hype, pressure, fake familiarity, exaggerated claims, spammy subject lines, and "I hope this email finds you well".
-- Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "become a dependable partner", "looking forward to your response".
+- Never use these phrases: "I hope this email finds you well", "I hope this message finds you well", "trusted provider", "leading provider", "touching base", "just checking in", "become a dependable partner", "looking forward to your response", "hospital replacement", "ambulance replacement", "emergency service", "acute care provider", "generic support workers".
 - Subject line must be plain, specific and under 8 words.
 - Never include placeholders like [Your Name], [Your Position], [Company Name] or [Phone].
 - Never claim an existing partnership, endorsement or referral relationship.

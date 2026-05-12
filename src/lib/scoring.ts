@@ -6,7 +6,16 @@ const highIntentRoles = [
   'director',
   'practice manager',
   'care manager',
+  'case manager',
+  'clinical coordinator',
+  'clinical care manager',
   'clinical lead',
+  'discharge planner',
+  'discharge coordinator',
+  'sil manager',
+  'village manager',
+  'intake',
+  'admissions',
   'partnership',
   'referral',
 ];
@@ -14,13 +23,61 @@ const highIntentRoles = [
 const priorityCategories = new Set([
   'NDIS support coordinator',
   'Home Care Package provider',
+  'Retirement village',
   'Aged care provider',
+  'SIL provider',
+  'Community nursing provider',
+  'Hospital discharge planner',
+  'Allied health provider',
 ]);
+
+const highNeedSignals = [
+  'elderly',
+  'high risk',
+  'high-risk',
+  'complex',
+  'sil',
+  'supported independent living',
+  'neurological',
+  'neuro',
+  'abi',
+  'acquired brain injury',
+  'chronic disease',
+  'falls',
+  'fall risk',
+  'post-discharge',
+  'post discharge',
+  'hospital avoidance',
+  'deterioration',
+  'wellness monitoring',
+  'clinical monitoring',
+  'care coordination',
+  'family visibility',
+  'trend reporting',
+  'escalation',
+];
+
+const lowFitSignals = [
+  'gym',
+  'retail',
+  'marketing',
+  'trade',
+  'beauty',
+  'cosmetic',
+  'not accepting',
+  'closed',
+];
 
 export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' | 'website' | 'needs' | 'location' | 'notes'> & Partial<Pick<Lead, 'businessNeeds' | 'suitabilitySummary' | 'outreachAngle'>>): number {
   let score = 42;
   const role = lead.contactRole.toLowerCase();
-  const notes = lead.notes.toLowerCase();
+  const notes = [
+    lead.notes,
+    lead.suitabilitySummary,
+    lead.outreachAngle,
+    ...(lead.needs ?? []),
+    ...(lead.businessNeeds ?? []),
+  ].filter(Boolean).join(' ').toLowerCase();
 
   if (priorityCategories.has(lead.category)) score += 16;
   if (lead.email) score += 12;
@@ -31,10 +88,15 @@ export function scoreLead(lead: Pick<Lead, 'category' | 'contactRole' | 'email' 
   if (lead.suitabilitySummary) score += 6;
   if (lead.outreachAngle) score += 4;
   if (highIntentRoles.some((term) => role.includes(term))) score += 14;
-  if (notes.includes('referral') || notes.includes('complex') || notes.includes('transition')) score += 8;
-  if (notes.includes('not accepting') || notes.includes('closed')) score -= 20;
+  if (notes.includes('referral') || notes.includes('transition')) score += 8;
+  score += Math.min(18, highNeedSignals.filter((term) => notes.includes(term)).length * 4);
+  if (lowFitSignals.some((term) => notes.includes(term))) score -= 20;
 
   return Math.max(5, Math.min(98, score));
+}
+
+export function leadScoreOutOfTen(score: number): number {
+  return Math.max(1, Math.min(10, Math.round(score / 10)));
 }
 
 export function likelihoodLabel(score: number): string {

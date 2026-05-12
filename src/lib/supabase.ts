@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const outreachUrl = 'https://kfugipcvnorigweczzhv.supabase.co';
-const outreachAnonKey = 'sb_publishable_8_Da3387rO1H_ZZc1H4r9g_Nr4fQmCT';
+const outreachAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmdWdpcGN2bm9yaWd3ZWN6emh2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0MjA1NTUsImV4cCI6MjA5Mzk5NjU1NX0.7k49MheurHhaTq-XXhlRKtRqcOJxNSHHZI0WQNXbf5w';
 
 const url = (import.meta.env.VITE_OUTREACH_SUPABASE_URL as string | undefined) || outreachUrl;
 const anonKey = (import.meta.env.VITE_OUTREACH_SUPABASE_ANON_KEY as string | undefined) || outreachAnonKey;
